@@ -1,0 +1,24 @@
+# /etc/gdm3/custom.conf 参考样例
+#
+# 只改 [daemon] 段，其余保留系统原有内容。
+# 改完执行 sudo systemctl restart gdm（会踢掉当前图形会话）或直接 reboot。
+
+[daemon]
+# 关键：禁用 Wayland，否则 chromium --window-position 完全失效，
+# 三个窗口会全部叠在主屏上
+WaylandEnable=false
+
+# 开机自动登录，大屏机器不能停在登录界面
+AutomaticLoginEnable=true
+AutomaticLogin=kiosk
+
+# 保险：显式指定 Xorg 会话（部分版本需要）
+DefaultSession=ubuntu-xorg
+
+[security]
+
+[xdmcp]
+
+[chooser]
+
+[debug]
