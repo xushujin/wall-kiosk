@@ -33,7 +33,9 @@ class VersionTest {
     fun `预发布版比同号正式版小`() {
         assertEquals(-1, Version.compare("1.0.1-beta", "1.0.1"))
         assertEquals(1, Version.compare("1.0.1", "1.0.1-rc1"))
-        assertEquals(-1, Version.compare("2.0.0-alpha", "1.9.9"))
+        // 主版本号不同就先比主版本，预发布标签不参与——
+        // 2.0.0-alpha 仍然大于 1.9.9
+        assertEquals(1, Version.compare("2.0.0-alpha", "1.9.9"))
     }
 
     @Test
