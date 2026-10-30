@@ -3,6 +3,10 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 应用内更新需要它才能拉起系统安装器。这只是"允许申请"，
+         系统仍会弹确认框，用户还要在设置里单独给本应用开"安装未知应用"。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -24,6 +28,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 把缓存里的更新包交给系统安装器。
+             targetSdk 24 以后 file:// 会直接抛 FileUriExposedException，
+             必须走 content:// 这条路。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

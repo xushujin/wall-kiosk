@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wallkiosk.console.ui.theme.LocalPalette
@@ -16,10 +17,14 @@ import com.wallkiosk.console.ui.theme.NeuSnackbar
 import com.wallkiosk.console.ui.theme.NeuTheme
 
 @Composable
-fun WallKioskApp(vm: ConsoleViewModel = viewModel()) {
+fun WallKioskApp(
+    vm: ConsoleViewModel = viewModel(),
+    updateVm: UpdateViewModel = viewModel(),
+) {
     // 主题从设置里读，整棵树共用一份 —— 切换后全局立刻生效
     NeuTheme(themeId = vm.settings.themeId) {
         val palette = LocalPalette.current
+        val context = LocalContext.current
 
         val canGoBack = vm.route == Route.DETAIL ||
             vm.route == Route.ABOUT ||
@@ -49,7 +54,13 @@ fun WallKioskApp(vm: ConsoleViewModel = viewModel()) {
                     onBack = { vm.back() },
                 )
 
-                vm.route == Route.ABOUT -> AboutScreen(onBack = { vm.back() })
+                vm.route == Route.ABOUT -> AboutScreen(
+                    updateSource = vm.settings.updateRepo,
+                    updateState = updateVm.state,
+                    onCheckUpdate = { updateVm.check(vm.settings.updateRepo) },
+                    onOpenDialog = { updateVm.openDialog() },
+                    onBack = { vm.back() },
+                )
 
                 else -> HostListScreen(
                     hosts = vm.hosts,
@@ -62,7 +73,19 @@ fun WallKioskApp(vm: ConsoleViewModel = viewModel()) {
                 )
             }
 
-            val banner = vm.error ?: vm.message
+            if (updateVm.dialogVisible) {
+                UpdateDialog(
+                    state = updateVm.state,
+                    currentVersion = updateVm.currentVersion,
+                    onDownload = { updateVm.download() },
+                    onCancelDownload = { updateVm.cancelDownload() },
+                    onRetry = { updateVm.retry() },
+                    onInstall = { updateVm.install(context) },
+                    onDismiss = { updateVm.dismiss() },
+                )
+            }
+
+            val banner = vm.error ?: vm.message ?: updateVm.notice
             if (banner != null) {
                 NeuSnackbar(
                     message = banner,
@@ -70,6 +93,7 @@ fun WallKioskApp(vm: ConsoleViewModel = viewModel()) {
                     onDismiss = {
                         vm.clearError()
                         vm.clearMessage()
+                        updateVm.clearNotice()
                     },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)

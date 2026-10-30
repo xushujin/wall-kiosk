@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.wallkiosk.console.data.AppSettings
 import com.wallkiosk.console.data.Provider
 import com.wallkiosk.console.data.RepoConfig
+import com.wallkiosk.console.data.update.UpdateSources
 import com.wallkiosk.console.ui.theme.LocalPalette
 import com.wallkiosk.console.ui.theme.NeuButton
 import com.wallkiosk.console.ui.theme.NeuSegmented
@@ -49,6 +50,7 @@ fun SettingsScreen(
     var repo by remember { mutableStateOf(existing?.repo.orEmpty()) }
     var branch by remember { mutableStateOf(existing?.branch ?: "main") }
     var token by remember { mutableStateOf(existing?.token.orEmpty()) }
+    var updateRepo by remember { mutableStateOf(settings.updateRepo) }
     var localError by remember { mutableStateOf<String?>(null) }
 
     Column(Modifier.fillMaxSize()) {
@@ -183,6 +185,42 @@ fun SettingsScreen(
                         enabled = !loading && !readOnly,
                         primary = true,
                         modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+
+            NeuSurface {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    NeuText("应用更新", style = NeuType.bodyStrong)
+                    NeuText(
+                        "App 自己从哪儿查新版本，和上面的配置仓库无关。" +
+                            "填 owner/repo 会依次试 GitHub 和 Gitee；填完整地址（…/releases/latest）" +
+                            "用于自建发布服务。",
+                        style = NeuType.tiny,
+                        color = palette.textDim,
+                    )
+
+                    NeuTextField(
+                        value = updateRepo,
+                        onValueChange = { updateRepo = it },
+                        label = "更新源",
+                        placeholder = UpdateSources.DEFAULT_REPO,
+                        keyboardType = KeyboardType.Uri,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    NeuButton(
+                        text = "保存更新源",
+                        onClick = {
+                            onSave(
+                                settings.copy(
+                                    updateRepo = updateRepo.trim()
+                                        .ifBlank { UpdateSources.DEFAULT_REPO },
+                                )
+                            )
+                        },
+                        enabled = !loading && !readOnly,
+                        compact = true,
                     )
                 }
             }

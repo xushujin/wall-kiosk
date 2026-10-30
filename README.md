@@ -82,6 +82,9 @@ floor2      config/hosts/floor2.conf    2 块屏
 
 App 的界面是自己画的（不引 material3、不引网络库、不用 DI 框架），构建、签名、发版见 [android/README.md](android/README.md)。
 
+**App 支持应用内更新**：关于页 → 检查更新，直接查本仓库的 Release，
+下载带进度条，装之前会核对包名和签名。更新源在设置里可以改成 Gitee 镜像或自建地址。
+
 ## 快速开始
 
 ```bash

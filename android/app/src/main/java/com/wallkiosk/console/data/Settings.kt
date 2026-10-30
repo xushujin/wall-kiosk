@@ -1,5 +1,7 @@
 package com.wallkiosk.console.data
 
+import com.wallkiosk.console.data.update.UpdateSources
+
 /**
  * 主题只存 id。具体配色在 ui/theme/Palettes.kt 里，两边用同一组常量，
  * 由 PalettesTest 保证「每个 id 都有对应配色」。
@@ -26,6 +28,8 @@ object ThemeIds {
 data class AppSettings(
     val themeId: String = ThemeIds.DEFAULT,
     val repo: RepoConfig? = null,
+    /** 从哪查 App 自己的新版本：owner/repo 或完整的 releases/latest 地址 */
+    val updateRepo: String = UpdateSources.DEFAULT_REPO,
 )
 
 data class DecodedSettings(
@@ -40,8 +44,9 @@ data class DecodedSettings(
  * 整个项目（screens.conf）就是这个风格，人可以直接改，也不用引 JSON 库。
  *
  *   # wall-kiosk console settings
- *   version=2
+ *   version=3
  *   theme=graphite
+ *   updateRepo=xushujin/wall-kiosk
  *   provider=GITHUB
  *   baseUrl=https://api.github.com
  *   repo=your-org/wall-config
@@ -51,7 +56,7 @@ data class DecodedSettings(
 object SettingsCodec {
 
     /** 当前 schema 版本。加字段就要加版本号 + 迁移步骤，见 SettingsMigrations。 */
-    const val CURRENT_VERSION = 2
+    const val CURRENT_VERSION = 3
 
     private const val HEADER = "# wall-kiosk console settings —— 由 App 生成，可以手改"
 
@@ -60,6 +65,7 @@ object SettingsCodec {
         out.append(HEADER).append('\n')
         out.append("version=").append(version).append('\n')
         out.append("theme=").append(escape(settings.themeId)).append('\n')
+        out.append("updateRepo=").append(escape(settings.updateRepo)).append('\n')
 
         val repo = settings.repo
         if (repo != null) {
@@ -143,7 +149,14 @@ object SettingsMigrations {
             if (map["theme"].isNullOrBlank()) {
                 map["theme"] = ThemeIds.DEFAULT
             }
-        }
+        },
+        // v2 → v3：加了应用内更新源。老用户没有这个字段，补默认值即可，
+        // 原来的仓库配置和主题一个都不动。
+        Step(2, 3) { map ->
+            if (map["updateRepo"].isNullOrBlank()) {
+                map["updateRepo"] = UpdateSources.DEFAULT_REPO
+            }
+        },
     )
 
     fun migrate(raw: Map<String, String>, fromVersion: Int): AppSettings {
@@ -195,6 +208,10 @@ object SettingsMigrations {
             null
         }
 
-        return AppSettings(themeId = themeId, repo = repoConfig)
+        return AppSettings(
+            themeId = themeId,
+            repo = repoConfig,
+            updateRepo = map["updateRepo"]?.takeIf { it.isNotBlank() } ?: UpdateSources.DEFAULT_REPO,
+        )
     }
 }

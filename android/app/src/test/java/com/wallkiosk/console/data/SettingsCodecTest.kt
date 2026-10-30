@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.wallkiosk.console.data.update.UpdateSources
 
 class SettingsCodecTest {
 
@@ -120,5 +121,31 @@ class SettingsCodecTest {
     @Test
     fun `Gitee 的默认 API 地址`() {
         assertEquals("https://gitee.com/api/v5", Provider.GITEE.defaultBaseUrl)
+    }
+
+    @Test
+    fun `更新源能存下来再读回去`() {
+        val s = AppSettings(updateRepo = "myorg/myapp")
+        val decoded = SettingsCodec.decode(SettingsCodec.encode(s))
+        assertEquals("myorg/myapp", decoded.settings.updateRepo)
+    }
+
+    @Test
+    fun `v2 的老文件里没有更新源时补默认值`() {
+        // 老版本写的文件：没有 updateRepo 字段
+        val text = "version=2\ntheme=sand\nrepo=o/r\ntoken=t\n"
+        val decoded = SettingsCodec.decode(text)
+
+        // 文件版本号原样保留，只在内存里按 v3 的形状补字段
+        assertEquals(2, decoded.version)
+        assertEquals(UpdateSources.DEFAULT_REPO, decoded.settings.updateRepo)
+        assertEquals(ThemeIds.SAND, decoded.settings.themeId)
+        assertEquals("o/r", decoded.settings.repo?.repo)
+    }
+
+    @Test
+    fun `写出来的文件带当前版本号`() {
+        assertTrue(SettingsCodec.encode(sample).contains("version=3\n"))
+        assertEquals(3, SettingsCodec.CURRENT_VERSION)
     }
 }

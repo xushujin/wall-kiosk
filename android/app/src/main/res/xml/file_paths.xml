@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 能对外暴露的目录白名单。
+  只放 cache/updates 一个目录：更新包下到这里，装完就没用了，放缓存最合适。
+  不要把整个 cacheDir 或 filesDir 暴露出去。
+-->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

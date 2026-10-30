@@ -1,5 +1,6 @@
 package com.wallkiosk.console.data
 
+import com.wallkiosk.console.data.update.UpdateSources
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -100,5 +101,32 @@ class SettingsMigrationsTest {
             Provider.GITHUB.defaultBaseUrl,
             SettingsMigrations.fromLegacyPrefs(prefs).repo?.baseUrl,
         )
+    }
+
+    @Test
+    fun `v2 迁移到 v3 补上默认更新源`() {
+        val v2 = mapOf("theme" to ThemeIds.SAND, "repo" to "o/r", "token" to "t")
+        val settings = SettingsMigrations.migrate(v2, fromVersion = 2)
+
+        assertEquals(UpdateSources.DEFAULT_REPO, settings.updateRepo)
+        // 迁移只补新字段，老字段一个都不能动
+        assertEquals(ThemeIds.SAND, settings.themeId)
+        assertEquals("o/r", settings.repo?.repo)
+    }
+
+    @Test
+    fun `已经填过更新源时迁移不覆盖`() {
+        val v2 = mapOf("theme" to ThemeIds.SAND, "updateRepo" to "mine/fork")
+        assertEquals("mine/fork", SettingsMigrations.migrate(v2, fromVersion = 2).updateRepo)
+    }
+
+    @Test
+    fun `v1 一路迁到 v3，两步都生效`() {
+        val v1 = mapOf("repo" to "o/r", "token" to "t")
+        val settings = SettingsMigrations.migrate(v1, fromVersion = 1)
+
+        assertEquals(ThemeIds.DEFAULT, settings.themeId)
+        assertEquals(UpdateSources.DEFAULT_REPO, settings.updateRepo)
+        assertEquals("o/r", settings.repo?.repo)
     }
 }

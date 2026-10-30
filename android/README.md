@@ -120,6 +120,31 @@ KEY_PASSWORD
 Resource not accessible by integration
 ```
 
+## 应用内更新
+
+关于页 → 应用更新 → 检查更新。查的是发布页的 `releases/latest` 接口，不经过应用商店。
+
+| 步骤 | 做什么 |
+|---|---|
+| 检查 | 按更新源依次请求 GitHub / Gitee，取最新 tag、更新说明、APK 附件地址 |
+| 比较 | 按 semver 比 tag 和 `BuildConfig.VERSION_NAME`，比当前大才提示 |
+| 下载 | `HttpURLConnection` 手动跟 302 到 CDN，写 `cacheDir/updates/`，进度节流后回调界面 |
+| 校验 | 包名必须是本应用；API 28+ 还要比对签名证书，和已装版本不一致直接拒装 |
+| 安装 | `FileProvider` 给出 `content://` 交给系统安装器（`file://` 在 targetSdk 24+ 会抛异常） |
+
+几个需要知道的点：
+
+- **更新源可以改**：设置页 → 应用更新。填 `owner/repo` 会依次试 GitHub 和 Gitee；
+  填完整地址（`https://…/releases/latest`）用于自建发布服务。存在 `AppSettings.updateRepo`。
+- **只认正式版**：`prerelease` 或 `draft` 的 Release 会被跳过，不会自动更新到预发布版。
+- **Release 的说明就是更新说明**，`release.yml` 用 `generate_release_notes: true` 生成。
+- **GitHub 接口未登录时每小时 60 次**，按出口 IP 算。被限流会明确报 403，过一会儿再试。
+- **没有后台自动检查**：只有点「检查更新」才发请求。
+- **装完进程会被系统杀掉**，重新打开就是新版本。
+
+下载进度条是自绘的 `NeuProgressBar`（凹槽 + 强调色填充），按 1% 或 150ms 节流更新，
+不叠加补间动画——下载进度本身是连续跳的，再加动画反而显得比实际慢。
+
 ## 测试
 
 ```bash
@@ -131,9 +156,19 @@ Resource not accessible by integration
 | 文件 | 覆盖 |
 |---|---|
 | `ScreensConfTest` | 解析、CRLF、行级编辑保留注释、六类校验规则 |
-| `SettingsCodecTest` | 设置文件编解码、转义、未知主题、未来版本标记 |
-| `SettingsMigrationsTest` | v1 SharedPreferences → v2 文件迁移、字段缺失、降级安装 |
+| `SettingsCodecTest` | 设置文件编解码、转义、未知主题、未来版本标记、更新源往返 |
+| `SettingsMigrationsTest` | v1 prefs → v2 文件 → v3 的迁移链、字段缺失、降级安装 |
 | `PalettesTest` | 每个主题 id 都有配色、未知 id 退回默认 |
+| `VersionTest` | semver 比较：v 前缀、段数补齐、预发布、build 元数据、非数字段 |
+| `ReleaseParserTest` | 真实 GitHub 响应、Gitee 的字符串 assets、无 APK 附件、非 JSON 输入 |
+| `UpdateSourcesTest` | `owner/repo` → 双平台地址、完整地址直用、留空回默认 |
+| `DownloadProgressTest` | 百分比、总量未知、超过声明长度不越界 |
+| `FormatSizeTest` | 字节/KB/MB/GB 换算，0 表示未知而不是空文件 |
+
+`ReleaseParserTest` 用的是 2026-10-30 从
+`https://api.github.com/repos/xushujin/wall-kiosk/releases/latest` 真实抓下来的响应，
+不是手写的样例。为了让它在 JVM 上跑得起来，`testImplementation` 里引了 `org.json:json`
+（android.jar 里那份是抛 `not mocked` 的桩）——**只在测试作用域，不进 APK**。
 
 `ScreensConf` 的规则在三个地方各有一份（`bin/wall.sh`、`web/index.html`、这里的 `ScreensConf.kt`），
 仓库根目录的 `node test/console.mjs` 会拿同一批配置去跑真实的 `wall.sh --check` 做交叉验证。
@@ -150,19 +185,27 @@ android/
 │   │   ├── ScreensConf.kt       解析 / 行级编辑 / 校验 ← 与 wall.sh 对齐
 │   │   ├── Settings.kt          AppSettings、编解码、显式迁移链（纯逻辑）
 │   │   ├── SettingsStore.kt     文件读写 + 旧版 prefs 迁移
-│   │   └── RepoApi.kt           仓库读写（HttpURLConnection）
+│   │   ├── RepoApi.kt           配置仓库读写（HttpURLConnection）
+│   │   └── update/
+│   │       ├── Version.kt           semver 比较（纯逻辑）
+│   │       ├── UpdateApi.kt         更新源解析 + releases 接口 + 响应解析
+│   │       ├── UpdateDownloader.kt  下载：手动跟 302、进度节流、可取消
+│   │       └── ApkInstaller.kt      包名/签名校验 + FileProvider 安装
 │   └── ui/
 │       ├── theme/
 │       │   ├── Palettes.kt      四套配色
 │       │   ├── NeuTheme.kt      CompositionLocal、尺寸、字号
-│       │   └── Components.kt    拟态组件：Surface/Button/TextField/Dialog/TopBar/…
-│       ├── ConsoleViewModel.kt  状态与动作
-│       ├── App.kt               路由、Snackbar
-│       ├── SettingsScreen.kt    外观 + 仓库
+│       │   └── Components.kt    拟态组件：Surface/Button/TextField/ProgressBar/…
+│       ├── ConsoleViewModel.kt  配置台的状态与动作
+│       ├── UpdateViewModel.kt   更新状态机（检查 → 下载 → 校验 → 安装）
+│       ├── App.kt               路由、Snackbar、更新对话框挂载
+│       ├── SettingsScreen.kt    外观 + 仓库 + 更新源
 │       ├── HostListScreen.kt
 │       ├── HostDetailScreen.kt
-│       ├── AboutScreen.kt
-│       └── Dialogs.kt
+│       ├── AboutScreen.kt       关于 + 检查更新入口
+│       ├── UpdateDialog.kt      更新对话框与进度显示
+│       └── Dialogs.kt           屏幕编辑/新建主机
+├── app/src/main/res/xml/file_paths.xml   FileProvider 白名单（只有 cache/updates）
 └── gradle/wrapper/              wrapper（jar + properties）
 ```
 
@@ -182,7 +225,7 @@ android/
 | 双通道签名 | `keystore.properties` / 环境变量，见上文 |
 | tag 触发 CI 发布 | `.github/workflows/release.yml` |
 | 编译零警告 | `kotlin.compilerOptions.allWarningsAsErrors = true`，有警告直接构建失败 |
-| 核心逻辑单测 | 4 个测试类，见上文 |
+| 核心逻辑单测 | 9 个测试类，见上文（`org.json` 只在 `testImplementation`，不进 APK） |
 | 不确定的明确标注 | 见下面「验证状态」 |
 
 ## 验证状态
@@ -209,3 +252,16 @@ android/
 2. 四套配色在深色/浅色系统栏下的对比度
 3. `Dialog` 里键盘弹出时内容是否被遮（用了 `imePadding`）
 4. 真机上的滑动/点击手感
+
+**应用内更新这块，明确没验证的：**
+
+| 项 | 状态 | 说明 |
+|---|---|---|
+| 检查更新、解析真实 Release | ✅ 可离线验证 | 用真实抓取的 API 响应做单测 |
+| 下载 + 进度条 | ❌ 未在真机跑过 | 逻辑有单测（百分比/未知长度/不越界），但没实际下过 |
+| 签名一致性校验 | ❌ 未在真机跑过 | API 28+ 才有 `SigningInfo`；**API 26~27 只校验包名，不校验签名** |
+| `FileProvider` 拉起系统安装器 | ❌ 未在真机跑过 | 依赖 manifest 里的 provider 配置，装不上会提示"没有找到能处理 APK 的应用" |
+| "安装未知应用"权限引导 | ❌ 未在真机跑过 | 跳的是 `ACTION_MANAGE_UNKNOWN_APP_SOURCES`，各厂商 ROM 可能改过这个页面 |
+
+这几项第一次真机验证时的顺序建议：先确认 `检查更新` 能拉到 v1.0.1（当前版本等于它，应显示"已是最新"），
+再打一个更高版本的 tag，走完整的下载 → 校验 → 安装。

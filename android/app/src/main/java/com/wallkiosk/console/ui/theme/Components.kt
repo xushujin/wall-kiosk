@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -412,6 +414,40 @@ fun NeuSnackbar(
                 text = message,
                 style = NeuType.small,
                 color = if (isError) p.danger else p.text,
+            )
+        }
+    }
+}
+
+/**
+ * 拟态进度条：轨道是凹的，填充用强调色。
+ *
+ * 不做补间动画 —— 下载进度本身就是连续变化的，再叠一层动画会让它看起来
+ * 比实际慢半拍，反而不像"真的在动"。
+ */
+@Composable
+fun NeuProgressBar(
+    fraction: Float,
+    modifier: Modifier = Modifier,
+    height: Dp = 14.dp,
+) {
+    val p = LocalPalette.current
+    val shape = RoundedCornerShape(height / 2)
+    val value = fraction.coerceIn(0f, 1f)
+
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(height)
+            .neu(shape, p.background, p.light, p.dark, raised = false)
+            .clip(shape)
+    ) {
+        if (value > 0f) {
+            Box(
+                Modifier
+                    .fillMaxWidth(value)
+                    .fillMaxHeight()
+                    .background(p.accent)
             )
         }
     }

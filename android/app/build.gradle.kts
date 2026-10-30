@@ -123,4 +123,9 @@ dependencies {
     implementation("androidx.compose.runtime:runtime")
 
     testImplementation("junit:junit:4.13.2")
+
+    // 只在单元测试作用域，不进 APK。
+    // android.jar 里的 org.json 是抛 "not mocked" 的桩，不引一份真实现的话
+    // ReleaseParser 的解析测试根本跑不起来（那样就只能靠肉眼看代码，不算验证）。
+    testImplementation("org.json:json:20231013")
 }
