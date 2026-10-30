@@ -180,27 +180,25 @@ android/
 | tag 触发 CI 发布 | `.github/workflows/release.yml` |
 | 编译零警告 | `kotlin.compilerOptions.allWarningsAsErrors = true`，有警告直接构建失败 |
 | 核心逻辑单测 | 4 个测试类，见上文 |
-| 不确定的明确标注 | 见下面「未验证项」 |
+| 不确定的明确标注 | 见下面「验证状态」 |
 
-## 未验证项
+## 验证状态
 
-**这份代码没有在本机编译过。** 开发环境没有 Android SDK、Gradle、kotlinc，
-`./gradlew --version` 也因为网络限速跑不动（下载 Gradle 发行包只有几 KB/s）。
+**本地没有编译过**：开发环境没有 Android SDK、Gradle、kotlinc，`./gradlew` 跑不动。
 
-已经做的检查：
+**但 CI 已经编译并跑通了**。v1.0.0 的 `CI` 与 `Release` 两条流水线都通过，说明：
 
-- 逐文件人工审查（导入、签名、参数顺序、类型）
-- 括号平衡检查
-- 依赖清单确认无 material3 / okhttp
-- 逻辑与 `web/index.html` 逐函数对照
+| 项 | 状态 | 依据 |
+|---|---|---|
+| Kotlin 零警告编译 | ✅ | `allWarningsAsErrors` 已开，CI 绿 |
+| 4 个测试类全部通过 | ✅ | CI 跑的是 `testDebugUnitTest`，绿 |
+| release 签名 | ✅ | 发布包证书指纹与本地 keystore 一致 |
+| APK 可产出 | ✅ | v1.0.0 附件 4.9 MB |
 
-**还没做、需要你在第一次构建时确认的：**
+**仍然没验证的（只有真机能看）：**
 
-1. `./gradlew assembleDebug` 是否零警告通过（`allWarningsAsErrors` 已开，有警告会直接失败）
-2. `./gradlew :app:testDebugUnitTest` 是否全绿
-3. 拟态阴影的实际观感——用多层偏移近似高斯模糊，**没有在真机上看过**。
-   如果边缘出现明显台阶，调 `NeuDims.shadowSteps`（调大更细腻，但绘制次数线性增加）
-4. 四套配色在深色/浅色系统栏下的对比度
-5. `Dialog` 里键盘弹出时内容是否被遮（用了 `imePadding`，但没在真机验证）
-
-这些都属于"编译/真机才能确认"的范围，不敢写成通过。
+1. 拟态阴影的实际观感——用多层偏移近似高斯模糊。边缘若出现明显台阶，调 `NeuDims.shadowSteps`
+   （调大更细腻，绘制次数线性增加）
+2. 四套配色在深色/浅色系统栏下的对比度
+3. `Dialog` 里键盘弹出时内容是否被遮（用了 `imePadding`）
+4. 真机上的滑动/点击手感
