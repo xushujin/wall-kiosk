@@ -97,7 +97,11 @@ fun EditScreenDialog(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        Hint("缩放留空=100%，0.9=90%；定时重启 0 或不填=不重启")
+        Hint("缩放留空=100%，0.9=90%。")
+        Hint(
+            "定时重启：浏览器跑满这么多分钟就自动关掉重开，防止看板挂久了内存越吃越多。" +
+                "0 或不填=不重启。重开那一下屏幕会黑几秒，不是故障。"
+        )
 
         ErrorList(errs)
     }
