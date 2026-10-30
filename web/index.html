@@ -217,6 +217,7 @@
             <label for="provider">平台</label>
             <select id="provider">
               <option value="github">GitHub</option>
+              <option value="gitee">Gitee</option>
               <option value="gitea">Gitea / GitHub Enterprise</option>
               <option value="gitlab">GitLab</option>
             </select>
@@ -236,7 +237,7 @@
         <div class="field">
           <label for="repo">仓库</label>
           <input id="repo" class="mono" placeholder="your-org/wall-config">
-          <span class="hint">GitHub / Gitea 填 <code>owner/repo</code>；GitLab 填 <code>group/project</code>（支持子组）</span>
+          <span class="hint">GitHub / Gitee / Gitea 填 <code>owner/repo</code>；GitLab 填 <code>group/project</code>（支持子组）</span>
         </div>
 
         <div class="field">
@@ -244,7 +245,8 @@
           <input id="token" type="password" class="mono" placeholder="ghp_... / glpat-...">
           <span class="hint">
             只存在这台机器的 localStorage 里，不会发到除上面这个 API 地址以外的任何地方。
-            GitHub 需要 <code>Contents: Read and write</code>；GitLab 需要 <code>api</code> 或 <code>write_repository</code>。
+            GitHub 需要 <code>Contents: Read and write</code>；Gitee 勾 <code>projects</code>；
+            GitLab 需要 <code>api</code> 或 <code>write_repository</code>。
           </span>
         </div>
 
@@ -497,8 +499,9 @@ const LS_KEY = "wall-kiosk-console";
 /* ==API-BEGIN== */
 
 const PROVIDER_DEFAULTS = {
-  github: { baseUrl: "https://api.github.com", hint: "GitHub 公共站填 https://api.github.com；GitHub Enterprise 填 https://<域名>/api/v3" },
-  gitea:  { baseUrl: "", hint: "填 https://<域名>/api/v1（Gitea 默认）" },
+  github: { baseUrl: "https://api.github.com", hint: "GitHub 公共站填 https://api.github.com；GitHub Enterprise 填 https://<域名>/api/v3，选 Gitea 那一项" },
+  gitee:  { baseUrl: "https://gitee.com/api/v5", hint: "Gitee 填 https://gitee.com/api/v5；自建 Gitee 换域名即可" },
+  gitea:  { baseUrl: "", hint: "填 https://<域名>/api/v1（Gitea 默认）；GitHub Enterprise 是 /api/v3" },
   gitlab: { baseUrl: "https://gitlab.com/api/v4", hint: "填 https://<域名>/api/v4" }
 };
 
@@ -579,6 +582,58 @@ const ghAdapter = {
   }
 };
 
+const giteeAdapter = {
+  // Gitee 用 access_token 参数鉴权，不认 Authorization 头
+  tokenQuery(s) { return "access_token=" + encodeURIComponent(s.token); },
+  contentsUrl(s, path) {
+    return s.baseUrl + "/repos/" + s.repo + "/contents/" + encPath(path) +
+      "?ref=" + encodeURIComponent(s.branch) + "&" + this.tokenQuery(s);
+  },
+  async listDir(s, path) {
+    try {
+      const data = await request(this.contentsUrl(s, path), {});
+      if (!Array.isArray(data)) return [];
+      return data.map(function (x) {
+        return { name: x.name, type: x.type === "dir" ? "dir" : "file", path: x.path };
+      });
+    } catch (e) {
+      if (e.status === 404) return [];
+      throw e;
+    }
+  },
+  async readFile(s, path) {
+    try {
+      const data = await request(this.contentsUrl(s, path), {});
+      if (Array.isArray(data)) return null;
+      return { text: b64decode(data.content), version: data.sha || null };
+    } catch (e) {
+      if (e.status === 404) return null;
+      throw e;
+    }
+  },
+  async writeFile(s, path, text, message, version) {
+    const url = s.baseUrl + "/repos/" + s.repo + "/contents/" + encPath(path);
+    const body = {
+      access_token: s.token,
+      content: b64encode(text),
+      message: message,
+      branch: s.branch
+    };
+    if (version) body.sha = version;
+    // Gitee 新建用 POST、更新用 PUT（GitHub 两个都用 PUT）
+    const data = await request(url, {
+      method: version ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const sha = data && data.content ? data.content.sha : null;
+    if (sha) return sha;
+    // 拿不到新 sha 就回读一次，否则下次提交会被当成"新建"
+    const again = await this.readFile(s, path);
+    return again ? again.version : null;
+  }
+};
+
 const glAdapter = {
   headers(s, json) {
     const h = { "PRIVATE-TOKEN": s.token, "Accept": "application/json" };
@@ -622,7 +677,9 @@ const glAdapter = {
 };
 
 function adapterFor(provider) {
-  return provider === "gitlab" ? glAdapter : ghAdapter;
+  if (provider === "gitlab") return glAdapter;
+  if (provider === "gitee") return giteeAdapter;
+  return ghAdapter;
 }
 
 /* ==API-END== */

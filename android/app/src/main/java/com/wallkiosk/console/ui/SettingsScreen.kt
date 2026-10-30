@@ -191,7 +191,8 @@ fun SettingsScreen(
 }
 
 private fun apiHint(provider: Provider): String = when (provider) {
-    Provider.GITHUB -> "GitHub 填 https://api.github.com；GitHub Enterprise 填 https://<域名>/api/v3"
-    Provider.GITEA -> "填 https://<域名>/api/v1（Gitea 默认）"
+    Provider.GITHUB -> "GitHub 填 https://api.github.com；GitHub Enterprise 填 https://<域名>/api/v3，用 Gitea 这一项"
+    Provider.GITEE -> "Gitee 填 https://gitee.com/api/v5；自建 Gitee 换域名即可"
+    Provider.GITEA -> "填 https://<域名>/api/v1（Gitea 默认）；GitHub Enterprise 是 /api/v3"
     Provider.GITLAB -> "填 https://<域名>/api/v4"
 }

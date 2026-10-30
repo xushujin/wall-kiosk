@@ -79,8 +79,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // 不开 R8 的话 Compose 的 DEX 原样打进去，APK 会到 5MB 左右。
+            // 开了之后通常能压到 2~3MB：没用到的组件、调试符号、coroutines-debug
+            // 都会被裁掉。Compose 和 AndroidX 自带 consumer rules，不需要额外 keep。
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

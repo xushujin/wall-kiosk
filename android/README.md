@@ -17,6 +17,9 @@ cd android
 **用 Android Studio 打开 `android/` 这个目录，不是仓库根目录。** 根目录没有 `settings.gradle.kts`，
 打开它会得到一个不同步 Gradle 的普通工程，改代码没有补全、也构建不了。
 
+release 开了 R8（`isMinifyEnabled` + `isShrinkResources`）。不开的话 Compose 的 DEX 会原样打进包，
+APK 到 5MB 左右；开了通常 2~3MB。Compose 和 AndroidX 自带 consumer rules，不需要额外 keep。
+
 | 项 | 值 |
 |---|---|
 | Kotlin | 2.0.21 |

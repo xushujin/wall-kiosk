@@ -18,7 +18,7 @@ function loadApi() {
   const src = fs.readFileSync(HTML, "utf8");
   const m = src.match(/\/\* ==API-BEGIN== \*\/([\s\S]*?)\/\* ==API-END== \*\//);
   if (!m) throw new Error("web/index.html 里没找到 ==API-BEGIN== / ==API-END== 标记");
-  return new Function(m[1] + "\nreturn { ghAdapter, glAdapter, adapterFor, b64encode, b64decode };")();
+  return new Function(m[1] + "\nreturn { ghAdapter, giteeAdapter, glAdapter, adapterFor, b64encode, b64decode };")();
 }
 
 const api = loadApi();
@@ -80,6 +80,58 @@ const server = http.createServer((req, res) => {
         const sha = "sha-new-" + (store.size + 1);
         store.set(p, { text, sha });
         return json(200, { content: { sha, path: p }, commit: { message: b.message } });
+      }
+    }
+
+    // ---------- Gitee Contents API（形状同 GitHub，鉴权和写入方法不同）----------
+    m = u.pathname.match(/^\/api\/v5\/repos\/([^/]+)\/([^/]+)\/contents\/(.+)$/);
+    if (m) {
+      const owner = decodeURIComponent(m[1]);
+      const repoName = decodeURIComponent(m[2]);
+      if (owner !== "o" || repoName !== "r") return json(404, { message: "Not Found" });
+      if (req.method === "GET" && u.searchParams.get("access_token") !== "t0ken") {
+        return json(401, { message: "401 Unauthorized" });
+      }
+
+      const p = decodeURIComponent(m[3]);
+
+      if (req.method === "GET") {
+        if (p === "config/hosts") {
+          return json(200, [
+            { name: "lobby.conf", type: "file", path: "config/hosts/lobby.conf", sha: "g-sha-1" },
+          ]);
+        }
+        const f = store.get(p);
+        if (!f) return json(404, { message: "Not Found" });
+        return json(200, {
+          type: "file",
+          encoding: "base64",
+          size: Buffer.byteLength(f.text, "utf8"),
+          name: p.split("/").pop(),
+          path: p,
+          content: Buffer.from(f.text, "utf8").toString("base64"),
+          sha: f.sha,
+        });
+      }
+
+      if (req.method === "POST" || req.method === "PUT") {
+        const b = JSON.parse(body);
+        if (b.access_token !== "t0ken") return json(401, { message: "401 Unauthorized" });
+        const exists = store.has(p);
+        // Gitee：新建只能 POST，更新只能 PUT，走错方法会 400
+        if (req.method === "POST" && exists) {
+          return json(400, { message: "文件已存在，请用 PUT 更新" });
+        }
+        if (req.method === "PUT" && !exists) {
+          return json(400, { message: "文件不存在，请用 POST 新建" });
+        }
+        if (req.method === "PUT" && b.sha && store.get(p).sha !== b.sha) {
+          return json(409, { message: "sha does not match" });
+        }
+        const text = Buffer.from(b.content, "base64").toString("utf8");
+        const sha = "g-sha-" + (store.size + 10);
+        store.set(p, { text, sha });
+        return json(201, { content: { sha, path: p }, commit: { message: b.message } });
       }
     }
 
@@ -230,6 +282,73 @@ const glSettings = {
   await api.glAdapter.writeFile(glSettings, "config/hosts/new.conf", "DP-1|https://a/1\n", "新建", null);
   eq(seen[before].method, "POST", "新文件用 POST");
   ok(store.has("config/hosts/new.conf"), "新文件已创建");
+}
+
+/* ---------- Gitee ---------- */
+// 形状和 GitHub 一样，但鉴权走 access_token 参数、新建和更新是两个方法
+store.set("config/screens.conf", { text: CONF, sha: "sha-screens-1" });
+
+const giteeSettings = {
+  provider: "gitee",
+  baseUrl: base + "/api/v5",
+  repo: "o/r",
+  branch: "main",
+  token: "t0ken",
+};
+
+{
+  const files = await api.giteeAdapter.listDir(giteeSettings, "config/hosts");
+  eq(files.length, 1, "Gitee 列目录");
+  eq(files[0].path, "config/hosts/lobby.conf", "Gitee 路径正确");
+}
+
+{
+  const f = await api.giteeAdapter.readFile(giteeSettings, "config/screens.conf");
+  ok(f.text === CONF, "Gitee 读回内容一致（含中文注释）");
+  eq(f.version, "sha-screens-1", "Gitee 读回 sha");
+}
+
+{
+  const f = await api.giteeAdapter.readFile(giteeSettings, "config/nope.conf");
+  eq(f, null, "Gitee 404 返回 null");
+}
+
+{
+  // 未带 access_token 的 GET 应该被服务端拒掉，说明适配层确实把 token 放进了 URL
+  const res = await fetch(base + "/api/v5/repos/o/r/contents/config/screens.conf");
+  eq(res.status, 401, "Gitee GET 必须带 access_token");
+}
+
+{
+  const before = seen.length;
+  const newText = CONF + "DP-2|https://bi.example.com/new|0.9|0\n";
+  const sha = await api.giteeAdapter.writeFile(
+    giteeSettings, "config/screens.conf", newText, "配置: 加一屏", "sha-screens-1"
+  );
+  eq(seen[before].method, "PUT", "Gitee 更新已存在的文件用 PUT");
+  ok(!!sha && sha !== "sha-screens-1", "Gitee 更新后返回新 sha", String(sha));
+  eq(store.get("config/screens.conf").text, newText, "Gitee 内容已更新");
+}
+
+{
+  const before = seen.length;
+  const sha = await api.giteeAdapter.writeFile(
+    giteeSettings, "config/hosts/gitee-new.conf", "DP-1|https://a/1\n", "新建主机", null
+  );
+  eq(seen[before].method, "POST", "Gitee 新建文件用 POST");
+  ok(store.has("config/hosts/gitee-new.conf"), "Gitee 新文件已创建");
+  ok(!!sha, "Gitee 新建后拿到 sha，否则下次更新会走成新建", String(sha));
+}
+
+{
+  // token 错了要报 401，不能静默成功
+  let threw = null;
+  try {
+    await api.giteeAdapter.readFile({ ...giteeSettings, token: "wrong" }, "config/screens.conf");
+  } catch (e) {
+    threw = e;
+  }
+  ok(threw && threw.status === 401, "Gitee token 错误时抛 401", String(threw));
 }
 
 server.close();

@@ -29,6 +29,7 @@ interface RepoApi {
     companion object {
         fun of(config: RepoConfig): RepoApi = when (config.provider) {
             Provider.GITLAB -> GitLabApi(config)
+            Provider.GITEE -> GiteeApi(config)
             else -> GitHubApi(config)
         }
     }
@@ -167,6 +168,83 @@ class GitHubApi(config: RepoConfig) : HttpRepoApi(config) {
         }
         val body = request("PUT", url, headers(), payload.toString())
         runCatching { JSONObject(body).getJSONObject("content").optString("sha") }.getOrNull()
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Gitee —— Contents API 形状和 GitHub 一致，差别在鉴权和写入方法        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Gitee v5 的 contents 接口：
+ *   GET  /repos/{owner}/{repo}/contents/{path}?ref=&access_token=
+ *   POST /repos/{owner}/{repo}/contents/{path}   新建
+ *   PUT  /repos/{owner}/{repo}/contents/{path}   更新
+ *
+ * 和 GitHub 的两点不同：
+ *   1. 鉴权用 access_token 参数，不是 Authorization 头
+ *   2. 新建和更新是两个方法（GitHub 都用 PUT），所以必须先知道文件在不在
+ *
+ * 代价是 token 会出现在 URL 里，可能被中间代理的访问日志记下。
+ * Gitee 只认这种方式，属于平台限制，文档里已标注。
+ */
+class GiteeApi(config: RepoConfig) : HttpRepoApi(config) {
+
+    private val branch: String get() = config.branch.ifBlank { "main" }
+    private val base: String get() = config.baseUrl.trimEnd('/')
+
+    private fun tokenParam(): String =
+        "access_token=" + URLEncoder.encode(config.token, "UTF-8")
+
+    private fun contentsUrl(path: String): String =
+        "$base/repos/${config.repo}/contents/${encPath(path)}" +
+            "?ref=${URLEncoder.encode(branch, "UTF-8")}&${tokenParam()}"
+
+    override fun listDirBlocking(path: String): List<RemoteFile> {
+        val arr = JSONArray(request("GET", contentsUrl(path), emptyMap()))
+        return (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            RemoteFile(
+                name = o.optString("name"),
+                path = o.optString("path"),
+                isDir = o.optString("type") == "dir",
+            )
+        }
+    }
+
+    override fun readFileBlocking(path: String): RemoteContent {
+        val o = JSONObject(request("GET", contentsUrl(path), emptyMap()))
+        return RemoteContent(
+            text = b64decode(o.optString("content")),
+            version = o.optString("sha").ifBlank { null },
+        )
+    }
+
+    override suspend fun writeFile(
+        path: String,
+        text: String,
+        message: String,
+        version: String?,
+    ): String? = withContext(Dispatchers.IO) {
+        val url = "$base/repos/${config.repo}/contents/${encPath(path)}"
+        val payload = JSONObject().apply {
+            put("access_token", config.token)
+            put("content", b64encode(text))
+            put("message", message)
+            put("branch", branch)
+            if (version != null) put("sha", version)
+        }
+
+        val method = if (version != null) "PUT" else "POST"
+        val body = request(method, url, emptyMap(), payload.toString())
+
+        val sha = runCatching {
+            JSONObject(body).getJSONObject("content").optString("sha")
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+
+        // 响应结构万一变了就拿不到新 sha，下次提交会被当成"新建"而失败。
+        // 这种情况下回读一次，多一个请求换确定性。
+        sha ?: readFile(path)?.version
     }
 }
 

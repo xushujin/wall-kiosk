@@ -52,7 +52,7 @@ fun AboutScreen(onBack: () -> Unit) {
             }
 
             Section("支持范围") {
-                KeyValue("仓库", "GitHub / GitHub Enterprise / Gitea / GitLab")
+                KeyValue("仓库", "GitHub / Gitee / Gitea / GitHub Enterprise / GitLab")
                 KeyValue("协议", "HTTPS REST API + 访问令牌")
                 KeyValue("系统", "Android 8.0（API 26）及以上")
                 KeyValue(

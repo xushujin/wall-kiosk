@@ -78,7 +78,7 @@ floor2      config/hosts/floor2.conf    2 块屏
 
 点进去改地址，提交后主机下一轮轮询（30 秒）自动生效，**只重启改动的那一屏**。
 
-它走平台 REST API（GitHub / Gitea / GitLab），不碰 git 协议，所以**纯 SSH 的自建仓库用不了**——原因和替代方案见 [docs/console.md](docs/console.md)。改配置是行级的，注释和空行原样保留；校验规则和 `wall.sh` 一致，写错在提交前就被拦下。
+它走平台 REST API（GitHub / Gitee / Gitea / GitLab），不碰 git 协议，所以**纯 SSH 的自建仓库用不了**——原因和替代方案见 [docs/console.md](docs/console.md)。改配置是行级的，注释和空行原样保留；校验规则和 `wall.sh` 一致，写错在提交前就被拦下。
 
 App 的界面是自己画的（不引 material3、不引网络库、不用 DI 框架），构建、签名、发版见 [android/README.md](android/README.md)。
 

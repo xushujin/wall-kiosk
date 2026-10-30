@@ -39,7 +39,8 @@ data class HostConfig(
 
 enum class Provider(val label: String, val defaultBaseUrl: String) {
     GITHUB("GitHub", "https://api.github.com"),
-    GITEA("Gitea / GHE", ""),
+    GITEE("Gitee", "https://gitee.com/api/v5"),
+    GITEA("Gitea", ""),
     GITLAB("GitLab", "https://gitlab.com/api/v4"),
 }
 

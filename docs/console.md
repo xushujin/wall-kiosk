@@ -15,7 +15,7 @@
 
 | 配置仓库放在哪 | 能不能用 |
 |---|---|
-| GitHub / GitHub Enterprise / Gitea / GitLab | 能用 |
+| GitHub / Gitee / GitHub Enterprise / Gitea / GitLab | 能用 |
 | 只开了 SSH 的自建裸仓库 | **不能用** |
 
 原因很实际：浏览器里跑不了 git；手机上跑 JGit 依赖重、而且要处理 SSH 私钥。走 HTTPS API 只需要一个 token，还能顺便做权限控制。
@@ -31,10 +31,15 @@
 | 平台 | 怎么建 | 需要的权限 |
 |---|---|---|
 | GitHub | Settings → Developer settings → Fine-grained tokens | 只选这一个仓库，`Contents: Read and write` |
+| Gitee | 设置 → 私人令牌 → 生成新令牌 | 勾 `projects` |
 | GitLab | Preferences → Access tokens | `read_repository` 只读；要改再加 `write_repository` |
 | Gitea | 设置 → 应用 → 生成令牌 | 勾 `repository` |
 
 只读令牌也能连上看，点提交时会报 403，不会静默失败。
+
+**Gitee 的 token 是放在 URL 参数里的**（`?access_token=`），这是 Gitee v5 唯一支持的鉴权方式。
+HTTPS 传输本身是加密的，但中间的代理或网关有可能把完整 URL 记进访问日志。
+如果你的 Gitee 仓库走公网，建议给 token 设短有效期、用完即删。
 
 ## 3. 网页版
 
@@ -46,9 +51,10 @@ python3 -m http.server 8080
 
 **别直接双击 html 打开。** `file://` 的源是 `null`，有些服务端会拒绝这种跨域请求，表现是「连接」点了没反应。页面检测到 `file://` 会提示。
 
-CORS 情况：
+CORS 情况（实测）：
 
 - `api.github.com`：允许跨域，开箱能用
+- `gitee.com/api/v5`：返回 `Access-Control-Allow-Origin: *`，开箱能用
 - 自建 Gitea：要在 `app.ini` 的 `[cors]` 里把 `ALLOWED_ORIGINS` 配上你访问的地址
 - GitLab：一般允许；自建的如果关了 CORS 会失败
 

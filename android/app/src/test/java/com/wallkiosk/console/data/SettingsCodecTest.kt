@@ -102,4 +102,22 @@ class SettingsCodecTest {
         val text = "version=2\ntheme=graphite\nrepo=o/r\ntoken=abc=def==\n"
         assertEquals("abc=def==", SettingsCodec.decode(text).settings.repo?.token)
     }
+
+    @Test
+    fun `每个平台都能存下来再读回去`() {
+        // 枚举改名或加值时会在这里暴露出来，避免老用户设置读不回来
+        for (provider in Provider.values()) {
+            val s = AppSettings(
+                themeId = ThemeIds.GRAPHITE,
+                repo = RepoConfig(provider = provider, repo = "o/r", token = "t"),
+            )
+            val decoded = SettingsCodec.decode(SettingsCodec.encode(s))
+            assertEquals(provider, decoded.settings.repo?.provider, "平台 $provider 往返失败")
+        }
+    }
+
+    @Test
+    fun `Gitee 的默认 API 地址`() {
+        assertEquals("https://gitee.com/api/v5", Provider.GITEE.defaultBaseUrl)
+    }
 }
