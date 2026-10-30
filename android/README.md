@@ -164,6 +164,7 @@ Resource not accessible by integration
 | `UpdateSourcesTest` | `owner/repo` → 双平台地址、完整地址直用、留空回默认 |
 | `DownloadProgressTest` | 百分比、总量未知、超过声明长度不越界 |
 | `FormatSizeTest` | 字节/KB/MB/GB 换算，0 表示未知而不是空文件 |
+| `JsonSafeTest` | Gitee 对不存在的文件返回 `200 + []` 时不会被当成对象 |
 
 `ReleaseParserTest` 用的是 2026-10-30 从
 `https://api.github.com/repos/xushujin/wall-kiosk/releases/latest` 真实抓下来的响应，
@@ -225,22 +226,23 @@ android/
 | 双通道签名 | `keystore.properties` / 环境变量，见上文 |
 | tag 触发 CI 发布 | `.github/workflows/release.yml` |
 | 编译零警告 | `kotlin.compilerOptions.allWarningsAsErrors = true`，有警告直接构建失败 |
-| 核心逻辑单测 | 9 个测试类，见上文（`org.json` 只在 `testImplementation`，不进 APK） |
+| 核心逻辑单测 | 10 个测试类，见上文（`org.json` 只在 `testImplementation`，不进 APK） |
 | 不确定的明确标注 | 见下面「验证状态」 |
 
 ## 验证状态
 
 **本地没有编译过**：开发环境没有 Android SDK、Gradle、kotlinc，`./gradlew` 跑不动。
 
-**但发布流水线已经编译并跑通过了**。v1.0.0 和 v1.0.1 的 `testDebugUnitTest` 与 `assembleRelease` 都成功，说明：
+**但发布流水线已经编译并跑通过了**。v1.0.0 / v1.0.1 / v1.1.0 的 `testDebugUnitTest` 与 `assembleRelease` 都成功，说明：
 
 | 项 | 状态 | 依据 |
 |---|---|---|
 | Kotlin 零警告编译 | ✅ | `allWarningsAsErrors` 已开，构建通过 |
-| 4 个测试类全部通过 | ✅ | 构建前跑的就是 `testDebugUnitTest` |
+| 10 个测试类全部通过 | ✅ | 构建前跑的就是 `testDebugUnitTest` |
 | release 签名 | ✅ | 发布包证书指纹与本地 keystore 一致 |
-| APK 可产出 | ✅ | v1.0.1 附件 963 KB，SHA-256 与 GitHub 记录一致 |
+| APK 可产出 | ✅ | v1.1.0 附件 957 KB，SHA-256 `5ad6db17…b697f` |
 | R8 后包内容完整 | ✅ | 解包核对过包名、入口 Activity、应用名、主题、图标都在 |
+| 新增权限与 FileProvider | ✅ | v1.1.0 包里能看到 `REQUEST_INSTALL_PACKAGES` 和 `fileprovider` |
 
 **R8 之后的运行时行为没在真机验证过。** 如果装上后启动崩溃，先看 `adb logcat`，
 最可能是某个类被裁掉，加一条 `-keep` 规则即可。
