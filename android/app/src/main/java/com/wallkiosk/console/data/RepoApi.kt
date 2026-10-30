@@ -13,6 +13,29 @@ data class RemoteFile(val name: String, val path: String, val isDir: Boolean)
 data class RemoteContent(val text: String, val version: String?)
 
 /**
+ * 把响应体解析成期望的形状，解析不出来就当"没有"。
+ *
+ * 不是防御性编程洁癖，是两个平台行为不一样，实测过：
+ *
+ *   GET /contents/<不存在的文件>
+ *     GitHub → 404 + {"message":"Not Found"}
+ *     Gitee  → 200 + []        ← 不存在的文件和不存在的目录都这样
+ *
+ * 直接 `JSONObject("[]")` 会抛
+ * "Value [] of type org.json.JSONArray cannot be converted to JSONObject"。
+ * 这个异常不是 RepoException，上层那个"404 就当文件不存在"的 catch 接不住，
+ * 最后原样冒到界面上——用户看到的就是这句 JSON 解析错误，完全看不出真实原因。
+ */
+internal object JsonSafe {
+
+    fun objectOrNull(body: String): JSONObject? =
+        runCatching { JSONObject(body) }.getOrNull()
+
+    fun arrayOrNull(body: String): JSONArray? =
+        runCatching { JSONArray(body) }.getOrNull()
+}
+
+/**
  * 配置仓库的读写。
  *
  * 用平台 REST API 而不是 git 协议：手机上跑 JGit 依赖重、处理不了 SSH key，
@@ -134,7 +157,7 @@ class GitHubApi(config: RepoConfig) : HttpRepoApi(config) {
             "?ref=${URLEncoder.encode(branch, "UTF-8")}"
 
     override fun listDirBlocking(path: String): List<RemoteFile> {
-        val arr = JSONArray(request("GET", contentsUrl(path), headers()))
+        val arr = JsonSafe.arrayOrNull(request("GET", contentsUrl(path), headers())) ?: return emptyList()
         return (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
             RemoteFile(
@@ -145,8 +168,8 @@ class GitHubApi(config: RepoConfig) : HttpRepoApi(config) {
         }
     }
 
-    override fun readFileBlocking(path: String): RemoteContent {
-        val o = JSONObject(request("GET", contentsUrl(path), headers()))
+    override fun readFileBlocking(path: String): RemoteContent? {
+        val o = JsonSafe.objectOrNull(request("GET", contentsUrl(path), headers())) ?: return null
         return RemoteContent(
             text = b64decode(o.optString("content")),
             version = o.optString("sha").ifBlank { null },
@@ -201,7 +224,8 @@ class GiteeApi(config: RepoConfig) : HttpRepoApi(config) {
             "?ref=${URLEncoder.encode(branch, "UTF-8")}&${tokenParam()}"
 
     override fun listDirBlocking(path: String): List<RemoteFile> {
-        val arr = JSONArray(request("GET", contentsUrl(path), emptyMap()))
+        // Gitee 对不存在的目录可能回 404，也可能回 200 + []，两种都当空目录
+        val arr = JsonSafe.arrayOrNull(request("GET", contentsUrl(path), emptyMap())) ?: return emptyList()
         return (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
             RemoteFile(
@@ -212,8 +236,11 @@ class GiteeApi(config: RepoConfig) : HttpRepoApi(config) {
         }
     }
 
-    override fun readFileBlocking(path: String): RemoteContent {
-        val o = JSONObject(request("GET", contentsUrl(path), emptyMap()))
+    override fun readFileBlocking(path: String): RemoteContent? {
+        // 关键：Gitee 对不存在的文件返回 200 + []，不是 404。
+        // 解析不出对象就当文件不存在，交给上层提示"没找到配置"，
+        // 而不是把 JSON 异常甩到界面上。
+        val o = JsonSafe.objectOrNull(request("GET", contentsUrl(path), emptyMap())) ?: return null
         return RemoteContent(
             text = b64decode(o.optString("content")),
             version = o.optString("sha").ifBlank { null },

@@ -53,7 +53,10 @@ fun SettingsScreen(
     var updateRepo by remember { mutableStateOf(settings.updateRepo) }
     var localError by remember { mutableStateOf<String?>(null) }
 
-    Column(Modifier.fillMaxSize()) {
+    // imePadding 必须加在**滚动容器外面**。
+    // 加在里面（.verticalScroll().imePadding()）等于给滚动内容底部垫了一块，
+    // 视口本身没被键盘顶起来，光标落到键盘下面就再也滚不上来了。
+    Column(Modifier.fillMaxSize().imePadding()) {
         NeuTopBar(
             title = "设置",
             subtitle = existing?.repo ?: "还没连接仓库",
@@ -65,7 +68,6 @@ fun SettingsScreen(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .imePadding()
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {

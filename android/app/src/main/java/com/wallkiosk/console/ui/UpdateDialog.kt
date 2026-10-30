@@ -172,5 +172,7 @@ internal fun formatSize(bytes: Long): String {
         value /= 1024.0
         index++
     }
-    return String.format(Locale.US, "%.1f %s", value, units[index])
+    // 用 kotlin 的扩展而不是 java.lang.String.format 的静态调用：
+    // 后者在 Kotlin 里对映射类型不一定能解析，这里不留这个不确定性
+    return "%.1f %s".format(Locale.US, value, units[index])
 }

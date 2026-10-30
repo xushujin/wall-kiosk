@@ -138,8 +138,7 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                 hosts = fetched
                 route = Route.LIST
                 if (fetched.isEmpty()) {
-                    error = "仓库里没找到 ${ScreensConf.DEFAULT_PATH} 或 " +
-                        "${ScreensConf.hostsDir()}/*.conf"
+                    error = emptyRepoMessage(repo)
                 }
             } catch (e: Exception) {
                 error = "连接失败：${e.message}"
@@ -155,6 +154,15 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * 仓库能连上但一个配置文件都没有。多半是分支或路径不对，
+     * 所以把当前用的分支名直接写进提示里，省得用户自己猜。
+     */
+    private fun emptyRepoMessage(repo: RepoConfig): String =
+        "仓库连上了，但没找到 ${ScreensConf.DEFAULT_PATH}，也没有 " +
+            "${ScreensConf.hostsDir()}/*.conf。检查分支（当前 ${repo.branch}）和路径，" +
+            "或者先按 templates/screens.conf.example 建一份提交上去。"
+
     /* ---------------- 读取 ---------------- */
 
     fun reload() {
@@ -165,8 +173,7 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 hosts = fetchHosts(repo)
                 if (hosts.isEmpty()) {
-                    error = "仓库里没找到 ${ScreensConf.DEFAULT_PATH} 或 " +
-                        "${ScreensConf.hostsDir()}/*.conf"
+                    error = emptyRepoMessage(repo)
                 }
             } catch (e: Exception) {
                 error = "读取失败：${e.message}"

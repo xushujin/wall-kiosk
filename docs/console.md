@@ -28,18 +28,32 @@
 
 ## 2. 令牌
 
-| 平台 | 怎么建 | 需要的权限 |
-|---|---|---|
-| GitHub | Settings → Developer settings → Fine-grained tokens | 只选这一个仓库，`Contents: Read and write` |
-| Gitee | 设置 → 私人令牌 → 生成新令牌 | 勾 `projects` |
-| GitLab | Preferences → Access tokens | `read_repository` 只读；要改再加 `write_repository` |
-| Gitea | 设置 → 应用 → 生成令牌 | 勾 `repository` |
+| 平台 | 怎么建 | 需要的权限 | 能限定到单个仓库吗 |
+|---|---|---|---|
+| GitHub | Settings → Developer settings → **Fine-grained tokens** | 只选这一个仓库，`Contents: Read and write` | **能** |
+| Gitee | 设置 → 私人令牌 → 生成新令牌 | 勾 `projects` | **不能**，只能账号级 |
+| GitLab | Preferences → Access tokens | `read_repository` 只读；要改再加 `write_repository` | 能（选 scope + 项目） |
+| Gitea | 设置 → 应用 → 生成令牌 | 勾 `repository` | 不能，只能账号级 |
 
 只读令牌也能连上看，点提交时会报 403，不会静默失败。
 
-**Gitee 的 token 是放在 URL 参数里的**（`?access_token=`），这是 Gitee v5 唯一支持的鉴权方式。
+### 关于「仓库级别的密钥」
+
+**Gitee 没有这个能力。** 它的私人令牌只有账号级的权限范围
+（`projects` / `pull_requests` / `issues` / `notes` / `keys` / `hook` / `groups` / `gists`），
+没有「只对某一个仓库生效」的选项。勾了 `projects` 就等于拿到这个账号下所有仓库的读写权。
+
+如果这个差别对你重要，三条路：
+
+1. **用 GitHub 的 fine-grained token**（推荐）：可以精确到「只有这个仓库的 `Contents`」，
+   泄露了也只影响这一个仓库。
+2. **在 Gitee 上建一个专用账号**，只把它加进配置仓库的成员，用它的令牌。
+   代价是多一个账号要维护，但泄露面同样被限制在这一个仓库。
+3. **自建 Gitea**：令牌也是账号级，但仓库在自己机器上，风险可控。
+
+**Gitee 的 token 还只能放在 URL 参数里**（`?access_token=`），这是 v5 唯一支持的鉴权方式。
 HTTPS 传输本身是加密的，但中间的代理或网关有可能把完整 URL 记进访问日志。
-如果你的 Gitee 仓库走公网，建议给 token 设短有效期、用完即删。
+如果仓库走公网，建议给 token 设短有效期、用完即删。
 
 ## 3. 网页版
 
