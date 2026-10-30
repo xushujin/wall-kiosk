@@ -165,6 +165,7 @@ Resource not accessible by integration
 | `DownloadProgressTest` | 百分比、总量未知、超过声明长度不越界 |
 | `FormatSizeTest` | 字节/KB/MB/GB 换算，0 表示未知而不是空文件 |
 | `JsonSafeTest` | Gitee 对不存在的文件返回 `200 + []` 时不会被当成对象 |
+| `ReleaseNotesTest` | Release 的 Markdown 说明降级成纯文本（加粗/链接/标题/列表） |
 
 `ReleaseParserTest` 用的是 2026-10-30 从
 `https://api.github.com/repos/xushujin/wall-kiosk/releases/latest` 真实抓下来的响应，
@@ -226,7 +227,7 @@ android/
 | 双通道签名 | `keystore.properties` / 环境变量，见上文 |
 | tag 触发 CI 发布 | `.github/workflows/release.yml` |
 | 编译零警告 | `kotlin.compilerOptions.allWarningsAsErrors = true`，有警告直接构建失败 |
-| 核心逻辑单测 | 10 个测试类，见上文（`org.json` 只在 `testImplementation`，不进 APK） |
+| 核心逻辑单测 | 11 个测试类，见上文（`org.json` 只在 `testImplementation`，不进 APK） |
 | 不确定的明确标注 | 见下面「验证状态」 |
 
 ## 验证状态

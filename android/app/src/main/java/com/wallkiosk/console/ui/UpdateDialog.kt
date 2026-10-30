@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.wallkiosk.console.data.update.DownloadProgress
 import com.wallkiosk.console.data.update.LatestRelease
+import com.wallkiosk.console.data.update.ReleaseNotes
 import com.wallkiosk.console.ui.theme.LocalPalette
 import com.wallkiosk.console.ui.theme.NeuDialog
 import com.wallkiosk.console.ui.theme.NeuProgressBar
@@ -90,7 +91,8 @@ private fun AvailableBody(release: LatestRelease, currentVersion: String) {
         )
 
         if (release.notes.isNotBlank()) {
-            NeuText(release.notes, style = NeuType.small)
+            // Release 说明是 Markdown，这里是纯文本控件，先降级一次
+            NeuText(ReleaseNotes.plain(release.notes), style = NeuType.small)
         }
 
         NeuText(
