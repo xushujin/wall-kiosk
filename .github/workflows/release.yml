@@ -17,7 +17,13 @@ jobs:
     name: 构建并发布
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 + fetch-tags 是为了拿到 annotated tag 对象。
+      # 默认的 fetch-depth: 1 只取当前提交，`git tag -l --format='%(contents:body)'`
+      # 会返回空字符串，Release 正文就变成只有自动生成的 changelog。
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-java@v4
         with:
@@ -133,9 +139,13 @@ jobs:
       - name: 取 tag 说明
         id: tagmsg
         run: |
+          body=$(git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME")
+          if [ -z "$body" ]; then
+            echo "::notice::这个 tag 没有说明（轻量 tag 或 fetch 没取到），Release 正文只会是自动生成的 changelog"
+          fi
           {
             echo "body<<__TAG_MSG__"
-            git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME"
+            printf '%s\n' "$body"
             echo "__TAG_MSG__"
           } >> "$GITHUB_OUTPUT"
 
