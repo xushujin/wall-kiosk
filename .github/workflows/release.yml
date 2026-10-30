@@ -126,9 +126,23 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk \
              "wall-kiosk-console-${VERSION_NAME}.apk"
 
+      # 把 tag 的说明当作 Release 正文。
+      # GitHub 自动生成的 notes 在"直接推 main、不开 PR"的仓库里只有一行
+      # "Full Changelog: v1.0.0...v1.0.1"，而 App 的更新对话框显示的就是这段正文——
+      # 空着不如用打 tag 时写的说明。
+      - name: 取 tag 说明
+        id: tagmsg
+        run: |
+          {
+            echo "body<<__TAG_MSG__"
+            git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME"
+            echo "__TAG_MSG__"
+          } >> "$GITHUB_OUTPUT"
+
       - name: 发布 Release
         uses: softprops/action-gh-release@v2
         with:
           files: wall-kiosk-console-*.apk
+          body: ${{ steps.tagmsg.outputs.body }}
           generate_release_notes: true
           fail_on_unmatched_files: true
