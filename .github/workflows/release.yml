@@ -2,7 +2,8 @@ name: Release
 
 # 打 tag 就发版：v1.2.3 → 跑单测 → 构建签名 APK → 校验签名 → 建 Release 并挂上去。
 #
-# 这是整个仓库**唯一**产出 APK 的地方。PR 和 push main 只跑测试（见 ci.yml）。
+# 这是仓库里**唯一**的 workflow，只有推 tag 才会触发。
+# push 到分支、发 PR 都不会跑 Actions；测试放在这里，是因为它是唯一的门。
 on:
   push:
     tags:

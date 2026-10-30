@@ -79,10 +79,9 @@ KEYSTORE_PASSWORD=xxx KEY_ALIAS=wall-console KEY_PASSWORD=xxx \
 
 ## 发版
 
-走 GitHub Flow：功能分支 → PR 到 `main`（CI 只跑测试）→ 合并 → 打 tag 发版。
+走 GitHub Flow：功能分支 → PR 到 `main` → 合并 → 打 tag 发版。
 
-**APK 只在推 tag 时构建。** PR 和 push main 都不会产出 APK，`ci.yml` 里只有单测。
-（单测会编译整个 debug variant，所以编译错误照样在 PR 阶段就拦住。）
+**仓库里只有一条 workflow，只在推 tag 时触发。** push 到分支、发 PR 都不会跑 Actions。
 
 ```bash
 git tag v1.2.3
@@ -91,7 +90,7 @@ git push origin v1.2.3
 
 `release.yml` 会：校验签名材料 → 还原 keystore → 跑单测 → 构建 → `apksigner verify` 确认不是 debug 证书 → 建 Release 并挂上 `wall-kiosk-console-1.2.3.apk`。
 
-测试放在发版流程里，是因为 tag 是唯一的构建入口：万一有人绕过 PR 直接打 tag，PR 上的检查就等于没跑。
+测试放在发版流程里，是因为它是唯一的门：PR 阶段没有自动检查，打 tag 前的单测就是最后一道防线。
 
 版本号规则：tag 去掉 `v` 就是 `versionName`；`versionCode` 用 `github.run_number`，保证每次都比上一版大。
 
@@ -186,12 +185,12 @@ android/
 
 **本地没有编译过**：开发环境没有 Android SDK、Gradle、kotlinc，`./gradlew` 跑不动。
 
-**但 CI 已经编译并跑通了**。v1.0.0 的 `CI` 与 `Release` 两条流水线都通过，说明：
+**但发布流水线已经编译并跑通过了**。v1.0.0 那次 `testDebugUnitTest` 与 `assembleRelease` 都成功，说明：
 
 | 项 | 状态 | 依据 |
 |---|---|---|
-| Kotlin 零警告编译 | ✅ | `allWarningsAsErrors` 已开，CI 绿 |
-| 4 个测试类全部通过 | ✅ | CI 跑的是 `testDebugUnitTest`，绿 |
+| Kotlin 零警告编译 | ✅ | `allWarningsAsErrors` 已开，构建通过 |
+| 4 个测试类全部通过 | ✅ | 构建前跑的就是 `testDebugUnitTest` |
 | release 签名 | ✅ | 发布包证书指纹与本地 keystore 一致 |
 | APK 可产出 | ✅ | v1.0.0 附件 4.9 MB |
 

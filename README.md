@@ -119,7 +119,7 @@ wall-kiosk/
 ├── install.sh                     安装入口
 ├── web/index.html                 配置台（单文件网页）
 ├── android/                       配置台（Kotlin + Compose）
-├── .github/workflows/             CI（PR/主干只跑测试）与 Release（打 tag 才构建发版）
+├── .github/workflows/             只有 release.yml，推 tag 才触发
 ├── test/                          配置解析与仓库读写的测试
 ├── .gitignore                     运行时状态 / 真实配置 / 凭据不进版本库
 └── docs/                          文档
