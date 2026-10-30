@@ -1,0 +1,98 @@
+name: Release
+
+# 打 tag 就发版：v1.2.3 → 跑单测 → 构建签名 APK → 校验签名 → 建 Release 并挂上去。
+#
+# 这是整个仓库**唯一**产出 APK 的地方。PR 和 push main 只跑测试（见 ci.yml）。
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 构建并发布
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # 签名走环境变量通道。缺材料就直接失败，
+      # 不产出未签名的 APK —— 那种包装不上，发出去只会更糟。
+      - name: 检查签名材料
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          missing=""
+          [ -z "$KEYSTORE_BASE64" ]   && missing="$missing KEYSTORE_BASE64"
+          [ -z "$KEYSTORE_PASSWORD" ] && missing="$missing KEYSTORE_PASSWORD"
+          [ -z "$KEY_ALIAS" ]         && missing="$missing KEY_ALIAS"
+          [ -z "$KEY_PASSWORD" ]      && missing="$missing KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::缺少签名材料：$missing"
+            exit 1
+          fi
+
+      - name: 还原 keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/keystore.jks
+          test -s android/keystore.jks
+
+      # tag 是唯一的构建入口，所以测试必须在这里也跑一遍：
+      # 如果有人绕过了 PR，PR 上的 CI 就等于没跑。
+      - name: 单元测试
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: 构建 release APK
+        working-directory: android
+        env:
+          KEYSTORE_FILE: keystore.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          # v1.2.3 → 1.2.3；versionCode 用 CI 的递增序号，保证每次都能覆盖升级
+          VERSION_NAME="${GITHUB_REF_NAME#v}"
+          ./gradlew :app:assembleRelease \
+            -PversionName="$VERSION_NAME" \
+            -PversionCode="${{ github.run_number }}" \
+            --stacktrace
+
+      - name: 校验签名
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          test -f "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -r | head -1)"
+          "$APKSIGNER" verify --print-certs "$APK"
+          # 确认不是 debug 证书签的
+          if "$APKSIGNER" verify --print-certs "$APK" | grep -q "CN=Android Debug"; then
+            echo "::error::APK 是 debug 证书签的，不能发布"
+            exit 1
+          fi
+
+      - name: 重命名
+        run: |
+          VERSION_NAME="${GITHUB_REF_NAME#v}"
+          cp android/app/build/outputs/apk/release/app-release.apk \
+             "wall-kiosk-console-${VERSION_NAME}.apk"
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: wall-kiosk-console-*.apk
+          generate_release_notes: true
+          fail_on_unmatched_files: true

@@ -1,6 +1,6 @@
 # 部署文档
 
-从一台装了 Ubuntu 的空机器，到三块屏自动出画面。
+从一台装了 Ubuntu 的空机器，到多块屏自动出画面。
 
 ## 1. 前置条件
 
@@ -8,11 +8,11 @@
 |---|---|---|
 | 系统 | Ubuntu 22.04 / 24.04 LTS | 20.04 也能跑，但 GDM 配置路径略有差异 |
 | 桌面 | GNOME | 其他桌面也可以，`gsettings` 部分会自动跳过 |
-| 显示器 | 2 块以上 | 一块屏也能跑，只是没意义 |
+| 显示器 | 1~3 块 | 按实际接线来，配置里写几行就起几个实例 |
 | 账号 | 一个普通用户 | 建议专用账号（如 `kiosk`），不要用 root 跑图形程序 |
 | 网络 | 能访问配置仓库 | 部署阶段需要，运行阶段断了不影响显示 |
 
-先确认三块屏都被系统认出来了：
+先确认屏都被系统认出来了：
 
 ```bash
 xrandr --query | grep ' connected'
@@ -26,7 +26,7 @@ HDMI-1 connected 1920x1080+1920+0 (normal left inverted right x axis y axis) 527
 DP-2 connected 1920x1080+3840+0 (normal left inverted right x axis y axis) 527mm x 296mm
 ```
 
-记下三个接口名（`DP-1` / `HDMI-1` / `DP-2`）和它们后面的 `+X+Y`，后面配置要用。如果这里只看到一块屏，先解决显卡/线材问题，跟本方案无关。
+记下每个接口名（示例里是 `DP-1` / `HDMI-1` / `DP-2`）和它们后面的 `+X+Y`，后面配置要用。如果这里只看到一块屏，先解决显卡/线材问题，跟本方案无关。
 
 ## 2. 系统准备
 
@@ -34,14 +34,14 @@ DP-2 connected 1920x1080+3840+0 (normal left inverted right x axis y axis) 527mm
 
 ```bash
 sudo apt update
-sudo apt install -y chromium-browser git x11-xserver-utils unclutter
+sudo apt install -y chromium-browser git x11-xserver-utils unclutter curl
 ```
 
 Ubuntu 24.04 起 `chromium-browser` 是 snap 包。如果介意 snap 的启动延迟，可以换成 `apt install chromium` 或装 Google Chrome 后把脚本里的 `WALL_BROWSER` 改成 `google-chrome`。
 
 ### 2.2 关掉 Wayland
 
-**这一步不能跳。** GNOME 在 Wayland 下会忽略应用自己指定的窗口位置，三个窗口会全部叠在主屏。
+**这一步不能跳。** GNOME 在 Wayland 下会忽略应用自己指定的窗口位置，所有窗口会全部叠在主屏。
 
 ```bash
 sudoedit /etc/gdm3/custom.conf
@@ -77,24 +77,27 @@ cd ~/wall-kiosk
 ./install.sh git@your-git/wall-config.git
 ```
 
-`install.sh` 做四件事：
+`install.sh` 做五件事：
 
 1. 把 `bin/wall.sh` 复制到 `~/.wall/bin/`，加执行权限
 2. 把配置模板复制到 `~/.wall/screens.conf`（仅当该文件不存在）
-3. 如果给了仓库地址，`git clone` 到 `~/.wall/repo`
+3. 如果给了仓库地址，`git clone` 到 `~/.wall/repo`（有 `config/hosts/<主机名>.conf` 就优先用它）
 4. 写 `~/.config/autostart/wall.desktop`，注册开机自启
+5. 把 `docs/` 和 `README.md` 复制到 `~/.wall/docs/`，现场没网也能查
 
 如果仓库已经有 `.git` 就跳过 clone，重装时不会覆盖。
 
 ## 4. 配置仓库
 
-配置仓库只有 `config/screens.conf` 一个文件。格式：
+最小情况下配置仓库只有 `config/screens.conf` 一个文件。格式：
 
 ```
 接口名|地址|缩放|定时重启分钟
 ```
 
-示例：
+**一行对应一块屏，行数就是实例数。** 接 1 块屏就写 1 行，接 3 块就写 3 行，脚本不假设固定屏数。
+
+示例（3 块屏）：
 
 ```
 DP-1|https://bi.example.com/dashboard/sales|1.0|0
@@ -108,6 +111,14 @@ DP-2|https://bi.example.com/dashboard/kanban|0.9|0
 | 地址 | 是 | 必须以 `http://` 或 `https://` 开头 |
 | 缩放 | 否 | 留空为 100%，`0.9` 表示整体缩到 90% |
 | 定时重启 | 否 | 单位分钟，`0` 或不填表示不重启 |
+
+行数和实际屏数不一致时：
+
+| 情况 | 行为 |
+|---|---|
+| 配置行数 = 实际屏数 | 正常，全部启动 |
+| 配置行数 < 实际屏数 | 多出来的屏黑着不管（没配置就没实例） |
+| 配置行数 > 实际屏数 | 少的那几块跳过并记 WARN；启动时等 10 秒确认没有新屏上线就按实际数量启动，不会白等 30 秒 |
 
 ### 4.1 仓库凭据
 
@@ -129,20 +140,90 @@ git -C ~/.wall/repo ls-remote --heads origin
 
 凭据没配好的表现是：日志里没有任何报错，但配置永远不更新。`--doctor` 能查出来。
 
-### 4.2 多台主机
+### 4.2 多台主机 / 屏数不同
 
-一台主机一个配置文件，用 `hosts/` 分开：
+每台主机的屏数可以不一样，用 `hosts/` 按主机名分文件，共用一个配置仓库：
 
 ```
 wall-config/
 └── config/
-    ├── screens.conf          默认
+    ├── screens.conf              默认（没有对应 hosts 文件的主机用它）
     └── hosts/
-        ├── lobby.conf        一楼
-        └── floor2.conf       二楼
+        ├── lobby.conf            一楼，3 块屏
+        ├── floor2.conf           二楼，2 块屏
+        └── reception.conf        前台，1 块屏
 ```
 
-脚本当前只读 `config/screens.conf`，多机支持需要改 `wall.sh`（加 `WALL_HOST` 环境变量或按 `hostname` 选文件）。目录结构先留好，改的时候不用动仓库布局。
+文件名就是 `hostname` 的输出加 `.conf`。主机的选择顺序：
+
+1. `config/hosts/<hostname>.conf` —— 存在就用它
+2. `config/screens.conf` —— 否则退回默认
+
+`hostname` 在大屏主机上确认一次：
+
+```bash
+hostname                      # 输出的就是文件名，例如 lobby
+ls ~/.wall/repo/config/hosts/
+```
+
+改主机名之后配置会跟着换文件，所以**别随便改主机名**，改了要记得同步改名配置文件。
+
+选了哪个文件可以在 `--check` 里看到：
+
+```
+[wall] 仓库配置   config/hosts/lobby.conf
+[wall] 屏数       配置 3 块 / 实际连接 3 块
+```
+
+屏数对不上时会给出提示：
+
+```
+[wall] WARN: 屏数       配置 3 块 / 实际连接 2 块，不一致的屏会被跳过
+```
+
+### 4.3 关掉浏览器升级提示
+
+浏览器的弹窗会直接盖在看板上，而大屏现场没人会去点它。分两层处理。
+
+**第一层：启动参数（脚本已经做了）**
+
+`bin/wall.sh` 里给 chromium 带了一组参数，关掉这些会冒出来的东西：
+
+| 参数 | 挡掉什么 |
+|---|---|
+| `--no-first-run` / `--no-default-browser-check` | 首次运行向导、"设为默认浏览器"提示 |
+| `--disable-search-engine-choice-screen` | 新版 Chrome 首启的搜索引擎选择页 |
+| `--disable-component-update` / `--check-for-update-interval=31536000` | 组件后台更新、更新检查 |
+| `--disable-background-networking` | 后台联网（更新、翻译、安全浏览上报） |
+| `--disable-session-crashed-bubble` / `--hide-crash-restore-bubble` | 崩溃后的"恢复页面"气泡 |
+| `--disable-breakpad` / `--noerrdialogs` | 崩溃上报框、进程错误对话框 |
+| `--disable-features=Translate,...` | 翻译条、媒体路由图标、优化提示 |
+| `--disable-infobars` | "Chrome 正受到自动测试软件控制"这类信息条 |
+
+上表是分类摘要，完整列表见 `bin/wall.sh` 里 `watch_screen` 的 `args=(...)`，一共二十多条，还包括
+`--disable-default-apps`、`--disable-sync`、`--disable-prompt-on-repost`，以及防止窗口被遮住时
+渲染降频的 `--disable-backgrounding-occluded-windows` / `--disable-renderer-backgrounding`。
+
+**第二层：系统更新（脚本掐不掉，得手动做）**
+
+用 **Google Chrome** 时，升级提示来自系统的 `google-chrome` 更新服务，不是浏览器自己查的，命令行参数管不到。两种做法：
+
+```bash
+# 做法一：锁住版本，不让 apt 升级（推荐，大屏不需要追新）
+sudo apt-mark hold google-chrome-stable
+
+# 做法二：改用 Chromium，它的更新检查能被 --check-for-update-interval 掐掉
+sudo apt install -y chromium-browser
+```
+
+另外把无人值守升级对大屏的影响也考虑进去：
+
+```bash
+# 别在半夜自动升级完顺手重启
+sudo systemctl disable --now unattended-upgrades
+```
+
+`unattended-upgrades` 升级内核/显卡驱动后不重启，可能出现"升级了但没生效"的诡异现象；大屏机器建议自己定维护窗口，别交给它。
 
 ## 5. 首次启动验收
 
@@ -152,7 +233,7 @@ wall-config/
 ~/.wall/bin/wall.sh --doctor
 ```
 
-输出应该是全 `[OK]`。有 `[!!]` 就按提示处理，别急着往下走。
+输出里**不该有 `[!!]`**。可选组件缺了会显示 `[--]`，不影响运行，按提示处理 `[!!]` 就行，别急着往下走。
 
 自检通过后手动启动：
 
@@ -160,7 +241,7 @@ wall-config/
 ~/.wall/bin/wall.sh
 ```
 
-应该看到三块屏各出一个页面，日志类似：
+应该看到每块屏各出一个页面，日志类似（下面按 3 块屏举例）：
 
 ```
 2026-10-28 12:00:13 [wall] 屏 DP-1 -> 1920x1080+0+0  https://...
@@ -178,22 +259,24 @@ sudo reboot
 
 如果显示器上电比主机慢，首次启动最多会等 30 秒才出画面——脚本在等配置里要求的屏数全部被 `xrandr` 认出来。这个等待是正常的，不是卡住。
 
+反过来说，**实际接的屏比配置里写的少**（比如第三块屏线松了）时，脚本等 10 秒确认没有新屏上线就会按实际数量启动，日志里会有一条 `按实际数量启动`。不会因为少一块屏就卡半分钟。
+
 ### 验收清单
 
 - [ ] `echo $XDG_SESSION_TYPE` 输出 `x11`
 - [ ] `~/.wall/bin/wall.sh --doctor` 全部 `[OK]`
 - [ ] 开机后不停在登录界面，直接进桌面
-- [ ] 三块屏各自显示正确的页面，没有叠在一屏上
+- [ ] 每块屏各自显示正确的页面，没有叠在一屏上
 - [ ] 鼠标指针自动隐藏
 - [ ] 放置 15 分钟不黑屏、不锁屏
 - [ ] 在别的电脑改一条地址并 push，30 秒内那块屏刷新
-- [ ] `~/.wall/bin/wall.sh --check` 显示三个屏都是"运行中"，且「配置校验 通过」
+- [ ] `~/.wall/bin/wall.sh --check` 显示每块屏都是"运行中"，且「配置校验 通过」
 
 ## 6. 常见部署问题
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 三个窗口全叠在主屏 | 还在 Wayland 会话 | 改 `/etc/gdm3/custom.conf`，`WaylandEnable=false`，重启 |
+| 所有窗口全叠在主屏 | 还在 Wayland 会话 | 改 `/etc/gdm3/custom.conf`，`WaylandEnable=false`，重启 |
 | 开机停在登录界面 | 没配自动登录 | 同上文件加 `AutomaticLoginEnable=true` 和 `AutomaticLogin=用户名` |
 | 某块屏全黑，日志说"未连接" | 配置里的接口名和实际不符 | `xrandr --query` 看真实名字；换过线或接口名会变 |
 | 日志说"大小写写错了，实际是 DP-1" | 配置里写成 `dp-1` | 按提示改成大写，push |

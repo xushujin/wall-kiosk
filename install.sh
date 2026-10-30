@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install.sh - 在目标 Ubuntu 机器上安装三屏大屏编排
+# install.sh - 在目标 Ubuntu 机器上安装多屏大屏编排
 #
 #   ./install.sh                        只装脚本和自启，配置仓库稍后手动 clone
 #   ./install.sh git@github.com:xx/wall-config.git   同时 clone 配置仓库
@@ -31,7 +31,7 @@ fi
 
 if [[ -n "$missing" ]]; then
   printf '!! 缺少命令：%s\n' "$missing"
-  printf '   sudo apt install -y chromium-browser git x11-xserver-utils unclutter\n\n'
+  printf '   sudo apt install -y chromium-browser git x11-xserver-utils unclutter curl\n\n'
 fi
 
 printf '==> 安装到 %s\n' "$WALL_HOME"
@@ -52,7 +52,12 @@ if [[ -n "$REPO_URL" ]]; then
   else
     printf '==> 克隆配置仓库\n'
     git clone "$REPO_URL" "$WALL_HOME/repo"
-    if [[ -f "$WALL_HOME/repo/config/screens.conf" ]]; then
+    # 每台主机接几块屏不一定一样，优先用按主机名分的配置
+    host_conf="$WALL_HOME/repo/config/hosts/$(hostname 2>/dev/null).conf"
+    if [[ -f "$host_conf" ]]; then
+      cp -f "$host_conf" "$WALL_HOME/screens.conf"
+      printf '    已使用本机配置 config/hosts/%s\n' "$(basename "$host_conf")"
+    elif [[ -f "$WALL_HOME/repo/config/screens.conf" ]]; then
       cp -f "$WALL_HOME/repo/config/screens.conf" "$WALL_HOME/screens.conf"
     fi
   fi
@@ -64,7 +69,7 @@ cat >"$AUTOSTART/wall.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Wall Kiosk
-Comment=三屏大屏自动编排
+Comment=多屏大屏自动编排
 Exec=$WALL_HOME/bin/wall.sh --supervise
 X-GNOME-Autostart-enabled=true
 X-GNOME-Autostart-Delay=5
@@ -84,8 +89,8 @@ cat <<'TIP'
 
 ------------------------------------------------------------------------
 改配置不用登录这台机器：
-  在任意电脑上改仓库里的 config/screens.conf，push 之后主机每 30 秒
-  自己 fetch 一次，检测到新提交就只重启地址变了的那块屏。
+  在任意电脑上改仓库里的 config/screens.conf（多台主机用 config/hosts/<主机名>.conf），
+  push 之后主机每 30 秒自己 fetch 一次，检测到新提交就只重启地址变了的那块屏。
   想立刻生效可以在主机上跑 ~/.wall/bin/wall.sh --reload
 
 文档（也可以看源码目录里的）：
@@ -93,6 +98,7 @@ cat <<'TIP'
   ~/.wall/docs/deploy.md    部署
   ~/.wall/docs/usage.md     日常使用与排错
   ~/.wall/docs/design.md    技术设计
+  ~/.wall/docs/console.md   配置台（网页 / App）
 
 还有两件事必须手动改，否则窗口位置不可控：
 
@@ -115,7 +121,7 @@ cat <<'TIP'
   ~/.wall/bin/wall.sh --check     看屏幕几何、配置解析、运行状态
   ~/.wall/bin/wall.sh --reload    立即拉一次仓库并按差异重启
   ~/.wall/bin/wall.sh --stop      停掉所有屏
-  xrandr --query                  确认三块屏的接口名和 +X+Y 偏移
+  xrandr --query                  确认每块屏的接口名和 +X+Y 偏移
   echo $XDG_SESSION_TYPE          必须是 x11
   tail -f ~/.wall/wall.log        运行日志（自启模式下）
 ------------------------------------------------------------------------

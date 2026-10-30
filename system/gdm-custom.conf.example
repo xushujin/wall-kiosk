@@ -5,7 +5,7 @@
 
 [daemon]
 # 关键：禁用 Wayland，否则 chromium --window-position 完全失效，
-# 三个窗口会全部叠在主屏上
+# 所有窗口会全部叠在主屏上
 WaylandEnable=false
 
 # 开机自动登录，大屏机器不能停在登录界面

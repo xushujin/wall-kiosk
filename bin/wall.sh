@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 #
-# wall.sh - 三屏大屏自动编排 + 配置热更新（Ubuntu + GNOME + X11/XWayland）
+# wall.sh - 多屏大屏自动编排 + 配置热更新（Ubuntu + GNOME + X11/XWayland）
 #
-#   ./wall.sh              正常启动：拉配置 -> 三屏各起一个 kiosk -> 持续监视仓库
+# 屏幕数量不固定，1 块、2 块、3 块都行：配置里有几行就起几个 kiosk，
+# 没接的屏跳过并 WARN，不会影响其他屏。
+#
+#   ./wall.sh              正常启动：拉配置 -> 每块屏各起一个 kiosk -> 持续监视仓库
 #   ./wall.sh --doctor     环境自检：会话类型、依赖、仓库凭据、配置语法、运行状态
 #   ./wall.sh --check      打印屏幕几何、配置解析、运行状态，不启动浏览器
 #   ./wall.sh --reload     立即拉一次仓库并只重启配置变了的屏幕（不用等轮询）
@@ -14,6 +17,7 @@
 #   WALL_REPO     配置仓库路径，默认 $WALL_HOME/repo
 #   WALL_BROWSER  浏览器命令，默认 chromium
 #   WALL_POLL     轮询间隔秒数，默认 30
+#   WALL_PROBE    页面可达性探测，1=开（默认）0=关；没有 curl 时自动关
 #
 set -uo pipefail
 
@@ -21,12 +25,36 @@ WALL_HOME="${WALL_HOME:-$HOME/.wall}"
 REPO_DIR="${WALL_REPO:-$WALL_HOME/repo}"
 REPO_CONF="$REPO_DIR/config/screens.conf"
 CONF="$WALL_HOME/screens.conf"
+
+# 每台主机接几块屏不一定一样（1~3 块都可能），所以配置仓库支持按主机名分文件：
+#   config/hosts/<hostname>.conf  存在就用它
+#   config/screens.conf           否则用这个默认文件
+# 做成函数而不是启动时算一次，是因为 hosts/ 下的文件可能是运行中 push 过来的，
+# 重启才能认出来不符合"改完 push 就生效"的约定。
+repo_conf() {
+  local h
+  h="$(hostname 2>/dev/null)"
+  if [[ -n "$h" && -f "$REPO_DIR/config/hosts/$h.conf" ]]; then
+    printf '%s' "$REPO_DIR/config/hosts/$h.conf"
+  else
+    printf '%s' "$REPO_CONF"
+  fi
+}
+
 NORM="$WALL_HOME/.screens.norm"
 NORM_NEW="$WALL_HOME/.screens.norm.new"
 RUN_DIR="$WALL_HOME/run"
 BROWSER="${WALL_BROWSER:-chromium}"
 POLL="${WALL_POLL:-30}"
 LOG_TAG="wall"
+
+# 页面可达性探测：浏览器打不开地址时会停在 chromium 自己的错误页上，
+# 进程还活着，光看 PID 会以为一切正常。用 curl 探一下才知道那块屏是不是废的。
+# curl 在 Ubuntu 上基本必装，没有就自动关掉探测，不影响其他功能。
+PROBE="${WALL_PROBE:-1}"
+if ! command -v curl >/dev/null 2>&1; then
+  PROBE=0
+fi
 
 # 凭据没配好时 git 会卡在密码提示上，开机流程直接冻住。
 # 这三个变量让它立刻失败而不是等人来输密码。
@@ -163,11 +191,16 @@ on_stop() {
 
 # 首次拉取：失败就退回上次成功的本地副本，绝不因为断网黑屏
 sync_config() {
-  local i pulled=1
+  local i pulled=1 rc tries=30
+
+  # 已经有上次的配置时只重试 5 次（10 秒）：网络没起来的时候不该为了拉一次
+  # 配置让屏幕黑 60 秒，先按缓存亮屏，后面每轮轮询会自己跟上。
+  # 一次都没成功过才值得等满 60 秒，因为除了等没有别的办法。
+  [[ -f "$CONF" ]] && tries=5
 
   if [[ -d "$REPO_DIR/.git" ]]; then
     log "同步配置仓库 $REPO_DIR"
-    for ((i = 1; i <= 30; i++)); do
+    for ((i = 1; i <= tries; i++)); do
       if git -C "$REPO_DIR" pull --ff-only --quiet >/dev/null 2>&1; then
         pulled=0
         log "已同步到 $(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null)"
@@ -175,13 +208,15 @@ sync_config() {
       fi
       sleep 2
     done
-    [[ $pulled -eq 1 ]] && warn "git 拉取失败（已重试 60s），使用本地缓存配置"
+    [[ $pulled -eq 1 ]] && warn "git 拉取失败（已重试 $((tries * 2))s），使用本地缓存配置"
   else
     warn "未找到 git 仓库 ${REPO_DIR}，使用本地缓存配置"
   fi
 
-  if [[ $pulled -eq 0 && -f "$REPO_CONF" ]]; then
-    cp -f "$REPO_CONF" "$CONF"
+  rc="$(repo_conf)"
+  if [[ $pulled -eq 0 && -f "$rc" ]]; then
+    cp -f "$rc" "$CONF"
+    log "使用配置 ${rc#"$REPO_DIR"/}"
   fi
 
   [[ -f "$CONF" ]] || die "无可用配置：$CONF"
@@ -223,13 +258,41 @@ watch_screen() {
     "--window-size=$gw,$gh"
     "--start-fullscreen"
     "--ozone-platform=x11"
+    "--password-store=basic"
+
+    # --- 首次运行 / 默认浏览器相关 ---
     "--no-first-run"
     "--no-default-browser-check"
-    "--disable-infobars"
-    "--disable-session-crashed-bubble"
-    "--disable-features=Translate,MediaRouter"
-    "--password-store=basic"
+    "--disable-default-apps"
+    "--disable-sync"
+    "--disable-search-engine-choice-screen"
+
+    # --- 升级与后台联网 ---
+    # 升级提示框、"发现新版本"气泡的源头都是后台检查，全部掐掉。
+    # 注意：这只管 Chromium 自带的检查，Google Chrome 的提示来自系统更新服务，
+    # 命令行掐不掉，见 docs/deploy.md「关掉浏览器升级提示」。
     "--check-for-update-interval=31536000"
+    "--disable-component-update"
+    "--disable-background-networking"
+    "--disable-component-extensions-with-background-pages"
+
+    # --- 崩溃与错误 ---
+    # 崩溃后不弹"恢复页面"、不弹崩溃上报框、进程出错不弹窗
+    "--disable-session-crashed-bubble"
+    "--hide-crash-restore-bubble"
+    "--disable-breakpad"
+    "--noerrdialogs"
+    "--disable-prompt-on-repost"
+
+    # --- 各种会盖住看板的浮层 ---
+    "--disable-infobars"
+    "--disable-features=Translate,TranslateUI,MediaRouter,OptimizationHints,HardwareMediaKeyHandling"
+
+    # --- 保证看板一直活着 ---
+    # 窗口被通知/弹窗遮住时不要把渲染降频，否则图表定时刷新会停
+    "--disable-backgrounding-occluded-windows"
+    "--disable-renderer-backgrounding"
+    "--autoplay-policy=no-user-gesture-required"
   )
   if [[ -n "$zoom" && "$zoom" != "1" && "$zoom" != "1.0" ]]; then
     args+=("--force-device-scale-factor=$zoom")
@@ -239,6 +302,12 @@ watch_screen() {
   while :; do
     rotate_log "$WALL_HOME/$output.log"
     started=$SECONDS
+
+    # 上一次被 kill -9 时 profile 里会留下 Singleton 锁，chromium 有时会因此
+    # 直接拒绝启动，那块屏就永远黑着。确认没有活着的实例占着这个 profile 再清。
+    if ! pgrep -f -- "user-data-dir=$profile" >/dev/null 2>&1; then
+      rm -f "$profile"/Singleton* 2>/dev/null
+    fi
 
     "$BROWSER" "${args[@]}" >>"$WALL_HOME/$output.log" 2>&1 &
     bpid=$!
@@ -309,7 +378,7 @@ stop_screen() {
   # watch_screen 被 -9 强杀时来不及清理自己的浏览器，会留下一个全屏窗口
   # 继续占着那块屏。按 profile 路径兜底清一遍。
   pkill -f -- "user-data-dir=$WALL_HOME/profiles/$output" 2>/dev/null
-  rm -f "$pf"
+  rm -f "$pf" "$RUN_DIR/$output.down"
   return 0
 }
 
@@ -338,6 +407,7 @@ stop_all() {
     kill -9 "$pid" 2>/dev/null
     rm -f "$f"
   done
+  rm -f "$RUN_DIR"/*.down
 
   printf '%s' "$(printf '%s' "$list" | wc -w | tr -d ' ')"
 }
@@ -394,10 +464,17 @@ reload_from_repo() {
   return $rc
 }
 
-# 显示器比主机慢启动时，xrandr 一开始只报一两块屏。
-# 等到配置里要求的屏数都出现再开始，最多等 30 秒。
+# 显示器比主机慢启动时，xrandr 一开始只报一两块屏，要等它认全再开始。
+#
+# 但屏数不固定（1~3 块都可能），所以不能死等配置里写的数量：配置写了 3 行、
+# 实际只接了 2 块屏时，死等等于每次开机白等 30 秒，最后还是只起 2 块。
+# 策略：给显示器 10 秒上电时间；10 秒后连上的屏数还在原地不动，就认为
+# 物理上就这么多了，按实际数量启动。
+XRANDR_GRACE=10
+
 wait_xrandr() {
-  local i need have
+  local i need have last=-1 stable=0
+
   need="$(normalize_conf "$CONF" 2>/dev/null | cut -d'|' -f1 | sort -u | wc -l | tr -d ' ')"
   if [[ -z "$need" || "$need" -eq 0 ]]; then
     need=1
@@ -405,48 +482,106 @@ wait_xrandr() {
 
   for ((i = 1; i <= 30; i++)); do
     have="$(xrandr --query 2>/dev/null | grep -cE '^[A-Za-z0-9._-]+ connected' || true)"
-    if [[ "${have:-0}" -ge "$need" ]]; then
+    have="${have:-0}"
+
+    [[ "$have" -ge "$need" ]] && return 0
+
+    if [[ "$have" -eq "$last" ]]; then
+      stable=$((stable + 1))
+    else
+      stable=0
+      last="$have"
+    fi
+
+    # 一块都没认出来说明显卡/驱动还没起来，继续等满 30 秒
+    if [[ "$i" -ge "$XRANDR_GRACE" && "$have" -gt 0 && "$stable" -ge 2 ]]; then
+      warn "配置写了 ${need} 块屏，实际稳定在 ${have} 块（等了 ${i}s），按实际数量启动"
       return 0
     fi
+
     sleep 1
   done
   warn "等待 ${need} 块屏就绪超时，当前只检测到 ${have:-0} 块"
   return 1
 }
 
+# 探一下地址到底通不通。只取状态码，不下载页面内容。
+#
+# 为什么要探测：浏览器打不开地址时**不会退出**，而是停在 chromium 自己的
+# 错误页上。进程活着、PID 正常、日志干净，看上去一切正常，实际上那块屏
+# 早就废了 —— 断网恢复、后端重启之后它也不会自己好，会一直停在错误页。
+#
+# 判断口径：
+#   2xx / 3xx        正常
+#   401 / 403        服务器活着，只是要登录，也算"通"（重启也没用）
+#   404 / 5xx / 超时 不通
+probe_url() {
+  local url="$1" code
+  # 先用 HEAD，省流量；少数后端不支持 HEAD（405/501），退回 GET 只要状态码
+  code="$(curl -s -o /dev/null -m 4 -w '%{http_code}' -I "$url" 2>/dev/null)"
+  case "$code" in
+    405 | 501) code="$(curl -s -o /dev/null -m 4 -w '%{http_code}' -r 0-0 "$url" 2>/dev/null)" ;;
+  esac
+  [[ -n "$code" && "$code" != "000" ]] || return 1
+  [[ "$code" =~ ^[23] || "$code" == "401" || "$code" == "403" ]]
+}
+
 # 巡检：某屏的守护进程被 OOM 之类干掉时，没人会拉起它。
 # 只处理已有 PID 文件的屏，不碰配置里从没起来过的，避免刷日志。
 reconcile() {
-  local f o pid line url zoom refresh skip
+  local f o pid line url zoom refresh skip flag
   for f in "$RUN_DIR"/*.pid; do
     [[ -f "$f" ]] || continue
     o="$(basename "$f" .pid)"
     pid="$(cat "$f")"
-    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    flag="$RUN_DIR/$o.down"
+
+    if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
+      line="$(normalize_conf "$CONF" 2>/dev/null | awk -F'|' -v k="$o" '$1 == k { print; exit }')"
+      if [[ -z "$line" ]]; then
+        rm -f "$f" "$flag"
+        continue
+      fi
+
+      IFS='|' read -r skip url zoom refresh <<<"$line"
+      log "屏 $o 的守护进程已消失，重新拉起"
+      stop_screen "$o"
+      start_screen "$o" "$url" "$zoom" "$refresh" || true
       continue
     fi
 
+    # 进程活着，但可能正停在错误页上。探测到"之前不通、现在通了"就重启它。
+    [[ "$PROBE" == "1" ]] || continue
     line="$(normalize_conf "$CONF" 2>/dev/null | awk -F'|' -v k="$o" '$1 == k { print; exit }')"
-    if [[ -z "$line" ]]; then
-      rm -f "$f"
-      continue
-    fi
-
+    [[ -n "$line" ]] || continue
     IFS='|' read -r skip url zoom refresh <<<"$line"
-    log "屏 $o 的守护进程已消失，重新拉起"
-    stop_screen "$o"
-    start_screen "$o" "$url" "$zoom" "$refresh" || true
+    [[ -n "$url" ]] || continue
+
+    if probe_url "$url"; then
+      if [[ -f "$flag" ]]; then
+        log "屏 $o 的页面恢复可达，重启该屏清掉错误页"
+        stop_screen "$o"
+        start_screen "$o" "$url" "$zoom" "$refresh" || true
+      fi
+    elif [[ ! -f "$flag" ]]; then
+      # 只记一次，不然断网期间每 30 秒刷一条
+      warn "屏 $o 的页面不可达（${url}），先保留当前画面，恢复后自动重启"
+      : >"$flag"
+    fi
   done
 }
 
 # 用仓库里的新配置替换本地，只重启内容变了的屏幕，没变的完全不闪
 reload_body() {
-  if [[ ! -f "$REPO_CONF" ]]; then
-    warn "仓库中缺少 config/screens.conf，保持现有配置"
+  local rc
+  rc="$(repo_conf)"
+
+  if [[ ! -f "$rc" ]]; then
+    warn "仓库中缺少 ${rc#"$REPO_DIR"/}，保持现有配置"
     return 1
   fi
 
-  cp -f "$REPO_CONF" "$WALL_HOME/screens.conf.new"
+  cp -f "$rc" "$WALL_HOME/screens.conf.new"
 
   if ! validate_conf "$WALL_HOME/screens.conf.new"; then
     warn "新配置未通过校验，保持现有配置，不重启任何屏幕"
@@ -543,12 +678,24 @@ do_doctor() {
   printf '  主机名      %s\n' "$(hostname 2>/dev/null)"
   printf '  WALL_HOME   %s\n' "$WALL_HOME"
   printf '  配置仓库    %s\n' "$REPO_DIR"
+  printf '  DISPLAY     %s\n' "${DISPLAY:-未设置}"
 
   if [[ "${XDG_SESSION_TYPE:-}" == "x11" ]]; then
     ok "图形会话是 X11"
   else
     bad "图形会话是 ${XDG_SESSION_TYPE:-未知}，不是 X11 —— 窗口定位会失效"
     fail=1
+  fi
+
+  # 会话没起全时 DISPLAY 是空的，xrandr 会直接失败，启动会卡在这一步。
+  # 但 SSH 进来跑 --doctor 时它本来就是空的，别当成故障报。
+  if [[ -n "${DISPLAY:-}" ]]; then
+    ok "DISPLAY=$DISPLAY"
+  elif [[ "${XDG_SESSION_TYPE:-}" == "x11" ]]; then
+    bad "会话是 x11 但 DISPLAY 为空，环境不完整（自启动太早？10 秒后会自动重试）"
+    fail=1
+  else
+    printf '  [--]  DISPLAY 未设置（SSH 里跑会这样，进图形会话再跑一次更准）\n'
   fi
 
   if command -v xrandr >/dev/null; then
@@ -615,6 +762,11 @@ do_doctor() {
   else
     printf '  [--]  xset 未安装，屏幕可能自动黑屏（apt install x11-xserver-utils）\n'
   fi
+  if command -v curl >/dev/null; then
+    ok "curl 已安装（页面可达性探测，断网恢复后能自动清掉错误页）"
+  else
+    printf '  [--]  curl 未安装，关闭页面探测；断网恢复后停在错误页的屏不会自愈（apt install curl）\n'
+  fi
 
   printf '\n== 运行状态 ==\n'
   for f in "$RUN_DIR"/*.pid; do
@@ -622,10 +774,13 @@ do_doctor() {
     found=1
     o="$(basename "$f" .pid)"
     p="$(cat "$f")"
-    if kill -0 "$p" 2>/dev/null; then
-      ok "屏 $o 运行中 pid=$p"
-    else
+    if ! kill -0 "$p" 2>/dev/null; then
       bad "屏 $o 已退出 pid=$p"
+    elif [[ -f "$RUN_DIR/$o.down" ]]; then
+      bad "屏 $o 进程在跑，但页面不可达（可能停在错误页）pid=$p"
+      fail=1
+    else
+      ok "屏 $o 运行中 pid=$p"
     fi
   done
   [[ $found -eq 0 ]] && printf '  [--]  当前没有屏幕实例在运行\n'
@@ -640,6 +795,9 @@ do_doctor() {
 }
 
 do_check() {
+  local rc need have
+  rc="$(repo_conf)"
+
   log "运行时目录 $WALL_HOME"
   log "配置仓库   $REPO_DIR"
   log "轮询间隔   ${POLL}s"
@@ -647,10 +805,10 @@ do_check() {
     log "仓库版本   $(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo 未知)"
   fi
 
-  if [[ -f "$REPO_CONF" ]]; then
-    log "仓库配置存在"
+  if [[ -f "$rc" ]]; then
+    log "仓库配置   ${rc#"$REPO_DIR"/}"
   else
-    warn "仓库配置缺失 $REPO_CONF"
+    warn "仓库配置缺失 ${rc#"$REPO_DIR"/}"
   fi
   if [[ -f "$CONF" ]]; then
     log "生效配置   $CONF"
@@ -662,6 +820,14 @@ do_check() {
   xrandr --query 2>/dev/null | while IFS= read -r line; do
     [[ $line =~ ^([A-Za-z0-9._-]+)\ connected ]] && printf '  %s\n' "$line"
   done
+
+  need="$(normalize_conf "$CONF" 2>/dev/null | cut -d'|' -f1 | sort -u | wc -l | tr -d ' ')"
+  have="$(xrandr --query 2>/dev/null | grep -cE '^[A-Za-z0-9._-]+ connected' || true)"
+  if [[ "${need:-0}" -eq "${have:-0}" ]]; then
+    log "屏数       配置 ${need:-0} 块 / 实际连接 ${have:-0} 块"
+  else
+    warn "屏数       配置 ${need:-0} 块 / 实际连接 ${have:-0} 块，不一致的屏会被跳过"
+  fi
 
   log "配置解析："
   if [[ -f "$CONF" ]]; then
@@ -765,10 +931,26 @@ case "${1:-}" in
       mv -f "$WALL_HOME/wall.log" "$WALL_HOME/wall.log.1"
     fi
     exec >>"$WALL_HOME/wall.log" 2>&1
+    # 连崩时退避，避免"配置一直缺失"这类永久故障每 10 秒刷一遍日志、
+    # 每次又白跑一遍 git 重试。跑够 30 秒就算正常退出，退避归零。
+    quick=0
     while :; do
+      started=$SECONDS
       "$0"
-      log "编排退出，10s 后重启"
-      sleep 10
+      if [[ $((SECONDS - started)) -lt 30 ]]; then
+        quick=$((quick + 1))
+      else
+        quick=0
+      fi
+      if [[ $quick -ge 6 ]]; then
+        delay=60
+      elif [[ $quick -ge 3 ]]; then
+        delay=30
+      else
+        delay=10
+      fi
+      log "编排退出（连续快速退出 ${quick} 次），${delay}s 后重启"
+      sleep "$delay"
     done
     ;;
   "")

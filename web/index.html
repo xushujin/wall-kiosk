@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>大屏配置台 · wall-kiosk</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --surface: #161a22;
+    --surface-2: #1c212b;
+    --border: #262c38;
+    --text: #e6e9ef;
+    --muted: #8b93a3;
+    --accent: #4f9cf9;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --err: #f85149;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+
+  /* ---------- 顶栏 ---------- */
+  .topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky; top: 0; z-index: 20;
+    flex-wrap: wrap;
+  }
+  .brand { font-size: 15px; font-weight: 650; letter-spacing: .2px; }
+  .brand small { color: var(--muted); font-weight: 400; margin-left: 8px; }
+  .spacer { flex: 1; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-2);
+    font-size: 12px; color: var(--muted); white-space: nowrap;
+  }
+  .pill b { color: var(--text); font-weight: 500; font-family: var(--mono); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ok { background: var(--ok); }
+  .dot.err { background: var(--err); }
+  .dot.warn { background: var(--warn); }
+
+  /* ---------- 通用 ---------- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface-2);
+    color: var(--text); font-size: 13px; font-family: inherit;
+    cursor: pointer; white-space: nowrap; transition: .12s;
+  }
+  .btn:hover:not(:disabled) { border-color: #3a4250; background: #222833; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #08101d; font-weight: 600; }
+  .btn.primary:hover:not(:disabled) { background: #6aabfa; border-color: #6aabfa; }
+  .btn.danger { color: var(--err); }
+  .btn.danger:hover:not(:disabled) { border-color: var(--err); background: rgba(248,81,73,.08); }
+  .btn.ghost { background: transparent; }
+  .btn.sm { padding: 4px 10px; font-size: 12px; border-radius: 6px; }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field > label { font-size: 12px; color: var(--muted); }
+  .field .hint { font-size: 11.5px; color: #6b7280; }
+  input, select, textarea {
+    width: 100%; padding: 9px 11px;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    font: inherit; font-size: 13px; outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  textarea { font-family: var(--mono); font-size: 12.5px; line-height: 1.7; resize: vertical; }
+  input.mono { font-family: var(--mono); }
+
+  /* ---------- 设置页 ---------- */
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 20px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px;
+  }
+  .card > h2 { margin: 0 0 4px; font-size: 15px; font-weight: 620; }
+  .card > p.sub { margin: 0 0 18px; color: var(--muted); font-size: 12.5px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .setup-form { display: grid; gap: 14px; }
+  .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+  .notice {
+    border-radius: 8px; padding: 10px 12px; font-size: 12.5px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--muted);
+  }
+  .notice.warn { border-color: rgba(210,153,34,.35); background: rgba(210,153,34,.08); color: #e3b341; }
+  .notice.err { border-color: rgba(248,81,73,.35); background: rgba(248,81,73,.08); color: #ff9b95; }
+
+  /* ---------- 主界面 ---------- */
+  .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }
+  @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } .grid2 { grid-template-columns: 1fr; } }
+
+  .hostlist { display: flex; flex-direction: column; gap: 8px; }
+  .host {
+    text-align: left; width: 100%; cursor: pointer;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 11px 13px;
+    display: flex; flex-direction: column; gap: 3px; color: var(--text);
+    font: inherit; transition: .12s;
+  }
+  .host:hover { border-color: #3a4250; }
+  .host.active { border-color: var(--accent); background: #16202e; }
+  .host .hname { font-weight: 600; font-size: 13.5px; display: flex; align-items: center; gap: 7px; }
+  .host .hpath { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .host .hmeta { font-size: 11.5px; color: var(--muted); }
+
+  .detail-head {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .detail-head h2 { margin: 0; font-size: 16px; }
+  .detail-head .path { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+  .screen {
+    display: grid; grid-template-columns: 92px minmax(0,1fr) auto;
+    gap: 12px; align-items: center;
+    padding: 12px 0; border-bottom: 1px dashed var(--border);
+  }
+  .screen:last-child { border-bottom: none; }
+  .iface {
+    font-family: var(--mono); font-size: 12px; font-weight: 600;
+    background: var(--surface-2); border: 1px solid var(--border);
+    padding: 3px 8px; border-radius: 6px; text-align: center;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .url { font-family: var(--mono); font-size: 12.5px; word-break: break-all; line-height: 1.5; }
+  .meta { font-size: 11px; color: var(--muted); margin-top: 3px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .rowacts { display: flex; gap: 6px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 24px 0; text-align: center; }
+
+  .addrow {
+    margin-top: 14px; width: 100%; padding: 11px;
+    border: 1px dashed var(--border); border-radius: 10px;
+    background: transparent; color: var(--muted);
+    font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .addrow:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---------- 对话框 ---------- */
+  dialog {
+    border: 1px solid var(--border); border-radius: 14px;
+    background: var(--surface); color: var(--text);
+    padding: 0; width: min(560px, calc(100vw - 32px));
+  }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog .dlg-head { padding: 16px 20px 0; font-size: 15px; font-weight: 620; }
+  dialog .dlg-body { padding: 16px 20px; display: grid; gap: 13px; }
+  dialog .dlg-foot {
+    padding: 0 20px 18px; display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;
+  }
+  .errlist { margin: 0; padding-left: 18px; color: var(--err); font-size: 12.5px; }
+
+  /* ---------- toast ---------- */
+  #toast {
+    position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px);
+    background: #232a36; border: 1px solid var(--border); color: var(--text);
+    padding: 10px 16px; border-radius: 10px; font-size: 13px;
+    opacity: 0; pointer-events: none; transition: .18s; z-index: 100;
+    max-width: min(560px, calc(100vw - 32px)); box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.err { border-color: rgba(248,81,73,.5); color: #ff9b95; }
+  #toast.ok { border-color: rgba(63,185,80,.4); }
+
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.25); border-top-color: currentColor; border-radius: 50%; animation: sp .7s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .hide { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">大屏配置台 <small>wall-kiosk</small></div>
+  <div class="spacer"></div>
+  <span class="pill" id="repoPill" title="当前仓库"><span class="dot"></span><span id="repoPillText">未配置</span></span>
+  <button class="btn ghost sm" id="btnReload" title="重新拉取仓库内容">刷新</button>
+  <button class="btn ghost sm" id="btnSettings">设置</button>
+</div>
+
+<div class="wrap">
+
+  <!-- 未配置 / 设置 -->
+  <section id="setupView" class="hide">
+    <div class="card" style="max-width:720px;margin:0 auto">
+      <h2>连接配置仓库</h2>
+      <p class="sub">
+        填的是<b>放 screens.conf 的那个仓库</b>（不是本程序仓库）。只读权限就能查看，编辑需要写权限。
+      </p>
+
+      <div id="fileWarn" class="notice warn hide" style="margin-bottom:16px">
+        当前是 <code>file://</code> 打开的，浏览器会以 null 源发起请求，部分服务端会拒绝。
+        建议在本目录起个静态服务：<code>python3 -m http.server 8080</code>，然后访问
+        <code>http://localhost:8080/index.html</code>。
+      </div>
+
+      <form class="setup-form" id="setupForm">
+        <div class="grid2">
+          <div class="field">
+            <label for="provider">平台</label>
+            <select id="provider">
+              <option value="github">GitHub</option>
+              <option value="gitea">Gitea / GitHub Enterprise</option>
+              <option value="gitlab">GitLab</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="branch">分支</label>
+            <input id="branch" class="mono" value="main" placeholder="main">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="baseUrl">API 地址</label>
+          <input id="baseUrl" class="mono" placeholder="https://api.github.com">
+          <span class="hint" id="baseHint"></span>
+        </div>
+
+        <div class="field">
+          <label for="repo">仓库</label>
+          <input id="repo" class="mono" placeholder="your-org/wall-config">
+          <span class="hint">GitHub / Gitea 填 <code>owner/repo</code>；GitLab 填 <code>group/project</code>（支持子组）</span>
+        </div>
+
+        <div class="field">
+          <label for="token">访问令牌</label>
+          <input id="token" type="password" class="mono" placeholder="ghp_... / glpat-...">
+          <span class="hint">
+            只存在这台机器的 localStorage 里，不会发到除上面这个 API 地址以外的任何地方。
+            GitHub 需要 <code>Contents: Read and write</code>；GitLab 需要 <code>api</code> 或 <code>write_repository</code>。
+          </span>
+        </div>
+
+        <div class="actions">
+          <button type="submit" class="btn primary" id="btnConnect">连接</button>
+          <span id="setupMsg" class="hint"></span>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- 主界面 -->
+  <section id="mainView" class="hide">
+    <div class="layout">
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="font-size:12px;color:var(--muted);letter-spacing:.4px">主机</div>
+          <button class="btn sm ghost" id="btnNewHost">+ 新建</button>
+        </div>
+        <div class="hostlist" id="hostList"></div>
+      </div>
+      <div class="card" id="detail"></div>
+    </div>
+  </section>
+
+</div>
+
+<!-- 编辑单个屏幕 -->
+<dialog id="dlgScreen">
+  <form method="dialog" id="dlgScreenForm">
+    <div class="dlg-head" id="dlgScreenTitle">编辑屏幕</div>
+    <div class="dlg-body">
+      <div class="grid2">
+        <div class="field">
+          <label for="edIface">接口名</label>
+          <input id="edIface" class="mono" placeholder="DP-1" autocomplete="off">
+          <span class="hint">xrandr 里 connected 后面那个名字，别写索引</span>
+        </div>
+        <div class="field">
+          <label for="edZoom">缩放（可空）</label>
+          <input id="edZoom" class="mono" placeholder="留空=100%，0.9=90%" autocomplete="off">
+        </div>
+      </div>
+      <div class="field">
+        <label for="edUrl">页面地址</label>
+        <input id="edUrl" class="mono" placeholder="https://bi.example.com/dashboard/sales" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="edRefresh">定时重启（分钟，0=不重启）</label>
+        <input id="edRefresh" class="mono" placeholder="0" autocomplete="off">
+      </div>
+      <div id="dlgScreenErr" class="notice err hide"></div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn danger" id="btnDeleteScreen">删除这一屏</button>
+      <div class="spacer"></div>
+      <button type="button" class="btn ghost" data-close>取消</button>
+      <button type="submit" class="btn primary">确定</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- 原始文本 -->
+<dialog id="dlgRaw">
+  <div class="dlg-head">原始文本 <span class="hint" id="dlgRawPath" style="font-weight:400"></span></div>
+  <div class="dlg-body">
+    <div class="notice">直接改文件内容。注释和空行会原样保留，保存前会做一次和 wall.sh 相同的校验。</div>
+    <textarea id="rawText" rows="18" spellcheck="false"></textarea>
+    <div id="dlgRawErr" class="notice err hide"></div>
+  </div>
+  <div class="dlg-foot">
+    <button type="button" class="btn ghost" data-close>取消</button>
+    <button type="button" class="btn primary" id="btnRawSave">校验并提交</button>
+  </div>
+</dialog>
+
+<!-- 新建主机 -->
+<dialog id="dlgHost">
+  <form method="dialog" id="dlgHostForm">
+    <div class="dlg-head">新建主机</div>
+    <div class="dlg-body">
+      <div class="notice">
+        会创建 <code>config/hosts/&lt;主机名&gt;.conf</code>。主机名必须和那台机器上 <code>hostname</code> 的输出
+        完全一致，否则它不会用这个文件（会退回默认配置）。
+      </div>
+      <div class="field">
+        <label for="nhName">主机名</label>
+        <input id="nhName" class="mono" placeholder="lobby" autocomplete="off">
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label for="nhIface">第一块屏的接口名</label>
+          <input id="nhIface" class="mono" placeholder="DP-1" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="nhUrl">页面地址</label>
+          <input id="nhUrl" class="mono" placeholder="https://bi.example.com/dashboard" autocomplete="off">
+        </div>
+      </div>
+      <div class="notice" style="font-size:12px">
+        第一块屏必须一起填：空的配置文件会让那台主机启动时报「无可用配置」，
+        而且这个空文件一旦提交就已经进仓库了。
+      </div>
+      <div id="dlgHostErr" class="notice err hide"></div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn ghost" data-close>取消</button>
+      <button type="submit" class="btn primary">创建</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- 提交 -->
+<dialog id="dlgCommit">
+  <form method="dialog" id="dlgCommitForm">
+    <div class="dlg-head">提交到仓库</div>
+    <div class="dlg-body">
+      <div class="field">
+        <label for="cmMsg">提交说明</label>
+        <input id="cmMsg" autocomplete="off">
+      </div>
+      <div class="notice" id="cmSummary"></div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn ghost" data-close>取消</button>
+      <button type="submit" class="btn primary" id="btnCommit">提交</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+
+/* ========================================================================
+ * 纯逻辑：解析 / 行级编辑 / 校验
+ * 必须与 bin/wall.sh 的 normalize_conf / validate_conf 行为一致。
+ * 这一段不碰 DOM，可以被 Node 单独抽出来测试。
+ * ====================================================================== */
+/* ==PURE-BEGIN== */
+
+// 把配置文本拆成"行"，每行带上类型和四个字段。
+// 保留 raw，是为了编辑时能原样写回注释和空行。
+function parseConf(text) {
+  const src = String(text == null ? "" : text);
+  const lines = src.split(/\r?\n/);
+  const rows = [];
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const trimmed = raw.trim();
+    if (trimmed === "") { rows.push({ kind: "blank", raw: raw }); continue; }
+    if (trimmed.charAt(0) === "#") { rows.push({ kind: "comment", raw: raw }); continue; }
+    const parts = raw.split("|");
+    rows.push({
+      kind: "data",
+      raw: raw,
+      iface: (parts[0] || "").trim(),
+      url: (parts[1] || "").trim(),
+      zoom: (parts[2] || "").trim(),
+      refresh: (parts[3] || "").trim()
+    });
+  }
+  return rows;
+}
+
+function entriesOf(rows) {
+  return rows.filter(function (r) { return r.kind === "data"; });
+}
+
+// 序列化一行：末尾的空字段去掉，避免产生 "a|b||" 这种尾巴
+function formatEntry(e) {
+  const f = [e.iface || "", e.url || "", e.zoom || "", e.refresh || ""];
+  while (f.length > 2 && String(f[f.length - 1]).trim() === "") f.pop();
+  return f.map(function (x) { return String(x).trim(); }).join("|");
+}
+
+// 行级编辑：只替换/删除命中的那一行，注释、空行、顺序全部保持原样。
+//   entry === null 表示删除
+//   找不到该接口名时追加到文件末尾
+function applyEdit(text, targetIface, entry) {
+  const rows = parseConf(text);
+  let idx = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].kind === "data" && rows[i].iface === targetIface) { idx = i; break; }
+  }
+
+  if (idx >= 0) {
+    if (entry === null) rows.splice(idx, 1);
+    else rows[idx] = { kind: "data", raw: formatEntry(entry) };
+  } else if (entry !== null) {
+    // 追加：如果文件以换行结尾，split 会留一个尾部空串，插到它前面，
+    // 否则会在末尾多出一个空行
+    let at = rows.length;
+    if (at > 0 && rows[at - 1].kind === "blank" && rows[at - 1].raw === "") at = at - 1;
+    rows.splice(at, 0, { kind: "data", raw: formatEntry(entry) });
+  }
+
+  return rows.map(function (r) { return r.raw; }).join("\n");
+}
+
+// 校验规则与 validate_conf 对齐，另外补了一条它不管的：
+// 文件里一条有效配置都没有时，wall.sh 会拒绝应用，这里提前拦住。
+function validateEntries(entries) {
+  const errs = [];
+  const seen = {};
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    const tag = e.iface || "(空接口名)";
+    if (!e.iface) {
+      errs.push({ iface: tag, msg: "缺少接口名" });
+    }
+    if (!e.url) {
+      errs.push({ iface: tag, msg: "缺少地址" });
+    } else if (!/^https?:\/\//i.test(e.url)) {
+      errs.push({ iface: tag, msg: "地址不是 http(s)：" + e.url });
+    }
+    if (e.zoom && !/^[0-9]+(\.[0-9]+)?$/.test(e.zoom)) {
+      errs.push({ iface: tag, msg: "缩放不是数字：" + e.zoom });
+    }
+    if (e.refresh && !/^[0-9]+$/.test(e.refresh)) {
+      errs.push({ iface: tag, msg: "定时重启不是整数：" + e.refresh });
+    }
+    if (e.iface) {
+      seen[e.iface] = (seen[e.iface] || 0) + 1;
+      if (seen[e.iface] === 2) {
+        errs.push({ iface: tag, msg: "接口名重复（后一条会覆盖前一条）" });
+      }
+    }
+  }
+  if (entries.length === 0) {
+    errs.push({ iface: "-", msg: "没有任何屏幕配置，主机启动时会报「无可用配置」" });
+  }
+  return errs;
+}
+
+function validateText(text) {
+  return validateEntries(entriesOf(parseConf(text)));
+}
+
+/* ==PURE-END== */
+
+/* ========================================================================
+ * 仓库读写：GitHub / Gitea / GitHub Enterprise 用 Contents API，
+ * GitLab 用 Repository Files API。两者形状不同，各自适配。
+ * ====================================================================== */
+
+const LS_KEY = "wall-kiosk-console";
+
+/* ==API-BEGIN== */
+
+const PROVIDER_DEFAULTS = {
+  github: { baseUrl: "https://api.github.com", hint: "GitHub 公共站填 https://api.github.com；GitHub Enterprise 填 https://<域名>/api/v3" },
+  gitea:  { baseUrl: "", hint: "填 https://<域名>/api/v1（Gitea 默认）" },
+  gitlab: { baseUrl: "https://gitlab.com/api/v4", hint: "填 https://<域名>/api/v4" }
+};
+
+function b64encode(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+function b64decode(b64) {
+  const clean = String(b64 || "").replace(/\s/g, "");
+  const bin = atob(clean);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+function encPath(p) {
+  return String(p).split("/").map(encodeURIComponent).join("/");
+}
+
+async function request(url, opts) {
+  let res;
+  try {
+    res = await fetch(url, opts);
+  } catch (e) {
+    throw new Error("请求失败（网络或跨域）：" + e.message);
+  }
+  const text = await res.text();
+  let data = null;
+  if (text) { try { data = JSON.parse(text); } catch (_) { data = text; } }
+  if (!res.ok) {
+    const msg = (data && (data.message || data.error_description || data.error)) || ("HTTP " + res.status);
+    const err = new Error(typeof msg === "string" ? msg : ("HTTP " + res.status));
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+const ghAdapter = {
+  headers(s, json) {
+    const h = { "Authorization": "Bearer " + s.token, "Accept": "application/vnd.github+json" };
+    if (json) h["Content-Type"] = "application/json";
+    return h;
+  },
+  async listDir(s, path) {
+    const url = s.baseUrl + "/repos/" + s.repo + "/contents/" + encPath(path) + "?ref=" + encodeURIComponent(s.branch);
+    try {
+      const data = await request(url, { headers: this.headers(s) });
+      if (!Array.isArray(data)) return [];
+      return data.map(function (x) {
+        return { name: x.name, type: x.type === "dir" ? "dir" : "file", path: x.path };
+      });
+    } catch (e) {
+      if (e.status === 404) return [];
+      throw e;
+    }
+  },
+  async readFile(s, path) {
+    const url = s.baseUrl + "/repos/" + s.repo + "/contents/" + encPath(path) + "?ref=" + encodeURIComponent(s.branch);
+    try {
+      const data = await request(url, { headers: this.headers(s) });
+      if (Array.isArray(data)) return null;
+      return { text: b64decode(data.content), version: data.sha };
+    } catch (e) {
+      if (e.status === 404) return null;
+      throw e;
+    }
+  },
+  async writeFile(s, path, text, message, version) {
+    const url = s.baseUrl + "/repos/" + s.repo + "/contents/" + encPath(path);
+    const body = { message: message, content: b64encode(text), branch: s.branch };
+    if (version) body.sha = version;
+    const data = await request(url, { method: "PUT", headers: this.headers(s, true), body: JSON.stringify(body) });
+    return data && data.content ? data.content.sha : null;
+  }
+};
+
+const glAdapter = {
+  headers(s, json) {
+    const h = { "PRIVATE-TOKEN": s.token, "Accept": "application/json" };
+    if (json) h["Content-Type"] = "application/json";
+    return h;
+  },
+  project(s) { return encodeURIComponent(s.repo); },
+  async listDir(s, path) {
+    const url = s.baseUrl + "/projects/" + this.project(s) + "/repository/tree?path=" +
+      encodeURIComponent(path) + "&ref=" + encodeURIComponent(s.branch) + "&per_page=100";
+    try {
+      const data = await request(url, { headers: this.headers(s) });
+      if (!Array.isArray(data)) return [];
+      return data.map(function (x) {
+        return { name: x.name, type: x.type === "tree" ? "dir" : "file", path: x.path };
+      });
+    } catch (e) {
+      if (e.status === 404) return [];
+      throw e;
+    }
+  },
+  async readFile(s, path) {
+    const url = s.baseUrl + "/projects/" + this.project(s) + "/repository/files/" +
+      encodeURIComponent(path) + "/raw?ref=" + encodeURIComponent(s.branch);
+    const res = await fetch(url, { headers: this.headers(s) });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    // GitLab 的 raw 不返回 sha，用 "exists" 当版本标记，写入时据此决定 PUT 还是 POST
+    return { text: await res.text(), version: "exists" };
+  },
+  async writeFile(s, path, text, message, version) {
+    const url = s.baseUrl + "/projects/" + this.project(s) + "/repository/files/" + encodeURIComponent(path);
+    const body = JSON.stringify({ branch: s.branch, content: text, commit_message: message });
+    await request(url, {
+      method: version ? "PUT" : "POST",
+      headers: this.headers(s, true),
+      body: body
+    });
+    return "exists";
+  }
+};
+
+function adapterFor(provider) {
+  return provider === "gitlab" ? glAdapter : ghAdapter;
+}
+
+/* ==API-END== */
+
+/* ========================================================================
+ * 界面
+ * ====================================================================== */
+
+const state = {
+  settings: null,
+  hosts: [],          // {name, path, text, baseText, version}
+  selected: null,     // path
+  busy: false
+};
+
+const $ = function (id) { return document.getElementById(id); };
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+let toastTimer = null;
+function toast(msg, kind) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.className = "show" + (kind ? " " + kind : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { el.className = ""; }, kind === "err" ? 6000 : 3000);
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) { return null; }
+}
+
+function saveSettings(s) {
+  localStorage.setItem(LS_KEY, JSON.stringify(s));
+}
+
+function updateRepoPill() {
+  const pill = $("repoPill");
+  const txt = $("repoPillText");
+  const dot = pill.querySelector(".dot");
+  if (!state.settings) {
+    txt.textContent = "未配置";
+    dot.className = "dot";
+    return;
+  }
+  txt.textContent = state.settings.repo + " @ " + state.settings.branch;
+  dot.className = "dot ok";
+}
+
+/* ---------------- 设置 ---------------- */
+
+function showSetup() {
+  $("setupView").classList.remove("hide");
+  $("mainView").classList.add("hide");
+  $("btnSettings").classList.add("hide");
+  if (location.protocol === "file:") $("fileWarn").classList.remove("hide");
+
+  const s = state.settings;
+  if (s) {
+    $("provider").value = s.provider || "github";
+    $("baseUrl").value = s.baseUrl || "";
+    $("repo").value = s.repo || "";
+    $("branch").value = s.branch || "main";
+    $("token").value = s.token || "";
+  }
+  applyProviderHint();
+}
+
+function applyProviderHint() {
+  const p = $("provider").value;
+  const d = PROVIDER_DEFAULTS[p];
+  $("baseHint").textContent = d.hint;
+  $("baseUrl").placeholder = d.baseUrl || "https://example.com/api/v1";
+  if (!state.settings || state.settings.provider !== p) {
+    if (d.baseUrl) $("baseUrl").value = d.baseUrl;
+  }
+}
+
+$("provider").addEventListener("change", applyProviderHint);
+
+$("setupForm").addEventListener("submit", async function (ev) {
+  ev.preventDefault();
+  const s = {
+    provider: $("provider").value,
+    baseUrl: ($("baseUrl").value || "").trim().replace(/\/+$/, ""),
+    repo: ($("repo").value || "").trim().replace(/^\/+|\/+$/g, ""),
+    branch: ($("branch").value || "main").trim() || "main",
+    token: ($("token").value || "").trim()
+  };
+  if (!s.baseUrl || !s.repo || !s.token) {
+    $("setupMsg").textContent = "API 地址、仓库、令牌都要填";
+    return;
+  }
+  state.settings = s;
+  saveSettings(s);
+  await loadRepo();
+});
+
+/* ---------------- 读仓库 ---------------- */
+
+async function loadRepo() {
+  const s = state.settings;
+  if (!s) return;
+  const api = adapterFor(s.provider);
+  state.busy = true;
+  setBusy(true);
+  try {
+    const files = await api.listDir(s, "config/hosts");
+    const hostFiles = files.filter(function (f) {
+      return f.type === "file" && /\.conf$/i.test(f.name);
+    });
+
+    const hosts = [];
+    for (let i = 0; i < hostFiles.length; i++) {
+      const f = hostFiles[i];
+      const got = await api.readFile(s, f.path);
+      if (!got) continue;
+      hosts.push({
+        name: f.name.replace(/\.conf$/i, ""),
+        path: f.path,
+        text: got.text,
+        baseText: got.text,
+        version: got.version
+      });
+    }
+
+    const def = await api.readFile(s, "config/screens.conf");
+    if (def) {
+      hosts.unshift({
+        name: "默认配置",
+        path: "config/screens.conf",
+        text: def.text,
+        baseText: def.text,
+        version: def.version
+      });
+    }
+
+    hosts.sort(function (a, b) {
+      if (a.path === "config/screens.conf") return -1;
+      if (b.path === "config/screens.conf") return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    state.hosts = hosts;
+    if (!state.selected || !hosts.some(function (h) { return h.path === state.selected; })) {
+      state.selected = hosts.length ? hosts[0].path : null;
+    }
+
+    $("setupView").classList.add("hide");
+    $("mainView").classList.remove("hide");
+    $("btnSettings").classList.remove("hide");
+    updateRepoPill();
+    renderHostList();
+    renderDetail();
+
+    if (!hosts.length) {
+      toast("仓库里没找到 config/screens.conf 或 config/hosts/*.conf", "err");
+    }
+  } catch (e) {
+    toast("读取失败：" + e.message, "err");
+    if (!state.hosts.length) showSetup();
+    $("setupMsg").textContent = e.message;
+  } finally {
+    state.busy = false;
+    setBusy(false);
+  }
+}
+
+function setBusy(on) {
+  ["btnReload", "btnSettings", "btnNewHost"].forEach(function (id) {
+    const el = $(id);
+    if (el) el.disabled = on;
+  });
+}
+
+/* ---------------- 列表 ---------------- */
+
+// 改回原样就不算脏，避免提交一个空变更
+function isDirty(h) {
+  return !!h && h.text !== h.baseText;
+}
+
+function currentHost() {
+  for (let i = 0; i < state.hosts.length; i++) {
+    if (state.hosts[i].path === state.selected) return state.hosts[i];
+  }
+  return null;
+}
+
+function renderHostList() {
+  const box = $("hostList");
+  if (!state.hosts.length) {
+    box.innerHTML = '<div class="empty">还没有任何配置</div>';
+    return;
+  }
+  box.innerHTML = state.hosts.map(function (h) {
+    const n = entriesOf(parseConf(h.text)).length;
+    return '<button class="host' + (h.path === state.selected ? " active" : "") + '" data-path="' + esc(h.path) + '">' +
+      '<span class="hname">' + esc(h.name) +
+        (isDirty(h) ? ' <span class="dot warn" title="有未提交的修改"></span>' : "") +
+      '</span>' +
+      '<span class="hpath">' + esc(h.path) + '</span>' +
+      '<span class="hmeta">' + n + ' 块屏</span>' +
+    '</button>';
+  }).join("");
+}
+
+function renderDetail() {
+  const box = $("detail");
+  const h = currentHost();
+  if (!h) {
+    box.innerHTML = '<div class="empty">左边选一台主机</div>';
+    return;
+  }
+
+  const rows = parseConf(h.text);
+  const entries = entriesOf(rows);
+  const errs = validateEntries(entries);
+  const isDefault = h.path === "config/screens.conf";
+
+  const head =
+    '<div class="detail-head">' +
+      '<div style="flex:1;min-width:180px">' +
+        '<h2>' + esc(h.name) + '</h2>' +
+        '<div class="path">' + esc(h.path) + '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="btn sm ghost" id="btnRaw">原始文本</button>' +
+        '<button class="btn sm primary" id="btnSave"' + (isDirty(h) ? "" : " disabled") + '>保存并提交</button>' +
+      '</div>' +
+    '</div>';
+
+  const note = isDefault
+    ? '<div class="notice" style="margin-bottom:14px">这是<b>默认配置</b>：没有单独 <code>config/hosts/&lt;主机名&gt;.conf</code> 的主机都用它。屏数不同的主机建议各自建一份。</div>'
+    : "";
+
+  const errBox = errs.length
+    ? '<div class="notice err" style="margin-bottom:14px"><b>这个文件现在有 ' + errs.length + ' 个问题</b>，wall.sh 会拒绝应用：<ul class="errlist" style="margin-top:6px">' +
+        errs.map(function (e) { return "<li>" + esc(e.iface) + "：" + esc(e.msg) + "</li>"; }).join("") +
+      "</ul></div>"
+    : "";
+
+  const body = entries.length
+    ? entries.map(function (e) {
+        // 配置里写的是缩放系数（1.0 / 0.9），给现场看百分比更直观
+        const zoomText = (function (z) {
+          if (!z) return "100%";
+          const n = Number(z);
+          if (!isFinite(n)) return z;
+          return Math.round(n * 100) + "%";
+        })(e.zoom);
+        const meta = [];
+        meta.push("缩放 " + zoomText);
+        meta.push("重启 " + (e.refresh && e.refresh !== "0" ? e.refresh + " 分钟" : "关闭"));
+        return '<div class="screen">' +
+          '<span class="iface" title="' + esc(e.iface) + '">' + esc(e.iface) + '</span>' +
+          '<div><div class="url">' + esc(e.url) + '</div><div class="meta">' + meta.map(esc).join(" · ") + '</div></div>' +
+          '<div class="rowacts">' +
+            '<button class="btn sm ghost" data-edit="' + esc(e.iface) + '">编辑</button>' +
+          '</div>' +
+        '</div>';
+      }).join("")
+    : '<div class="empty">这块屏还没有配置</div>';
+
+  box.innerHTML = head + note + errBox + body +
+    '<button class="addrow" id="btnAddScreen">+ 添加屏幕</button>';
+
+  $("btnRaw").addEventListener("click", openRaw);
+  $("btnSave").addEventListener("click", function () { openCommit(); });
+  $("btnAddScreen").addEventListener("click", function () { openScreenDialog(null); });
+
+  box.querySelectorAll("[data-edit]").forEach(function (el) {
+    el.addEventListener("click", function () { openScreenDialog(el.getAttribute("data-edit")); });
+  });
+}
+
+$("hostList").addEventListener("click", function (ev) {
+  const btn = ev.target.closest("[data-path]");
+  if (!btn) return;
+  const h = currentHost();
+  if (h && isDirty(h) && !confirm("当前主机有未提交的修改，切走会丢掉。确定？")) return;
+  state.selected = btn.getAttribute("data-path");
+  renderHostList();
+  renderDetail();
+});
+
+/* ---------------- 编辑单屏 ---------------- */
+
+let editingIface = null;
+
+function openScreenDialog(iface) {
+  const h = currentHost();
+  if (!h) return;
+  editingIface = iface;
+  const entries = entriesOf(parseConf(h.text));
+  const e = iface == null ? null : entries.find(function (x) { return x.iface === iface; });
+
+  $("dlgScreenTitle").textContent = e ? ("编辑 " + e.iface) : "添加屏幕";
+  $("edIface").value = e ? e.iface : "";
+  $("edUrl").value = e ? e.url : "";
+  $("edZoom").value = e ? e.zoom : "";
+  $("edRefresh").value = e ? e.refresh : "";
+  $("btnDeleteScreen").classList.toggle("hide", !e);
+  $("dlgScreenErr").classList.add("hide");
+  $("dlgScreen").showModal();
+  $("edIface").focus();
+}
+
+$("dlgScreenForm").addEventListener("submit", function (ev) {
+  ev.preventDefault();
+  const h = currentHost();
+  if (!h) return;
+
+  const next = {
+    iface: $("edIface").value.trim(),
+    url: $("edUrl").value.trim(),
+    zoom: $("edZoom").value.trim(),
+    refresh: $("edRefresh").value.trim()
+  };
+
+  // 先用整份文件校验：改完不能把文件搞成非法的
+  const text = applyEdit(h.text, editingIface === null ? "\u0000__new__" : editingIface, next);
+  const errs = validateText(text);
+  if (errs.length) {
+    const box = $("dlgScreenErr");
+    box.classList.remove("hide");
+    box.innerHTML = "<b>这样改完文件会不合法</b><ul class=\"errlist\">" +
+      errs.map(function (e) { return "<li>" + esc(e.iface) + "：" + esc(e.msg) + "</li>"; }).join("") +
+      "</ul>";
+    return;
+  }
+
+  h.text = text;
+  $("dlgScreen").close();
+  renderHostList();
+  renderDetail();
+});
+
+$("btnDeleteScreen").addEventListener("click", function () {
+  const h = currentHost();
+  if (!h || editingIface == null) return;
+  const text = applyEdit(h.text, editingIface, null);
+  const errs = validateText(text);
+  if (errs.length) {
+    const box = $("dlgScreenErr");
+    box.classList.remove("hide");
+    box.innerHTML = "<b>删掉这一屏后文件会不合法</b>（至少要留一块屏）<ul class=\"errlist\">" +
+      errs.map(function (e) { return "<li>" + esc(e.iface) + "：" + esc(e.msg) + "</li>"; }).join("") + "</ul>";
+    return;
+  }
+  h.text = text;
+  $("dlgScreen").close();
+  renderHostList();
+  renderDetail();
+});
+
+/* ---------------- 原始文本 ---------------- */
+
+function openRaw() {
+  const h = currentHost();
+  if (!h) return;
+  $("dlgRawPath").textContent = h.path;
+  $("rawText").value = h.text;
+  $("dlgRawErr").classList.add("hide");
+  $("dlgRaw").showModal();
+}
+
+$("btnRawSave").addEventListener("click", function () {
+  const h = currentHost();
+  if (!h) return;
+  const text = $("rawText").value;
+  const errs = validateText(text);
+  if (errs.length) {
+    const box = $("dlgRawErr");
+    box.classList.remove("hide");
+    box.innerHTML = "<b>校验没过，不会提交</b><ul class=\"errlist\">" +
+      errs.map(function (e) { return "<li>" + esc(e.iface) + "：" + esc(e.msg) + "</li>"; }).join("") +
+      "</ul>";
+    return;
+  }
+  h.text = text;
+  $("dlgRaw").close();
+  renderHostList();
+  renderDetail();
+});
+
+/* ---------------- 提交 ---------------- */
+
+function openCommit() {
+  const h = currentHost();
+  if (!h || !isDirty(h)) return;
+  const errs = validateText(h.text);
+  if (errs.length) {
+    toast("还有 " + errs.length + " 个校验问题，先修掉", "err");
+    return;
+  }
+  $("cmMsg").value = "配置: 更新 " + h.path;
+  const n = entriesOf(parseConf(h.text)).length;
+  $("cmSummary").innerHTML = "将提交 <code>" + esc(h.path) + "</code>（" + n + " 块屏）到 <b>" +
+    esc(state.settings.repo) + "@" + esc(state.settings.branch) + "</b>";
+  $("dlgCommit").showModal();
+  $("cmMsg").focus();
+  $("cmMsg").select();
+}
+
+$("dlgCommitForm").addEventListener("submit", async function (ev) {
+  ev.preventDefault();
+  const h = currentHost();
+  if (!h) return;
+  const msg = ($("cmMsg").value || "").trim() || ("配置: 更新 " + h.path);
+  const btn = $("btnCommit");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> 提交中';
+  try {
+    const api = adapterFor(state.settings.provider);
+    const v = await api.writeFile(state.settings, h.path, h.text, msg, h.version);
+    h.version = v;
+    h.baseText = h.text;
+    $("dlgCommit").close();
+    toast("已提交：" + msg, "ok");
+    renderHostList();
+    renderDetail();
+  } catch (e) {
+    toast("提交失败：" + e.message, "err");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "提交";
+  }
+});
+
+/* ---------------- 新建主机 ---------------- */
+
+$("btnNewHost").addEventListener("click", function () {
+  $("nhName").value = "";
+  $("dlgHostErr").classList.add("hide");
+  $("dlgHost").showModal();
+  $("nhName").focus();
+});
+
+$("dlgHostForm").addEventListener("submit", async function (ev) {
+  ev.preventDefault();
+  const name = ($("nhName").value || "").trim();
+  const iface = ($("nhIface").value || "").trim();
+  const url = ($("nhUrl").value || "").trim();
+  const errBox = $("dlgHostErr");
+  const fail = function (m) {
+    errBox.classList.remove("hide");
+    errBox.textContent = m;
+  };
+  errBox.classList.add("hide");
+
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
+    return fail("主机名只能用字母、数字、点、下划线、连字符，且不能以符号开头");
+  }
+  const path = "config/hosts/" + name + ".conf";
+  if (state.hosts.some(function (h) { return h.path === path; })) {
+    return fail("这个主机已经有一份配置了");
+  }
+
+  const text =
+    "# " + name + " 的大屏配置\n" +
+    "# 一行一屏，格式：接口名|页面地址|缩放|定时重启分钟\n" +
+    "\n" +
+    formatEntry({ iface: iface, url: url, zoom: "", refresh: "" }) + "\n";
+
+  const errs = validateText(text);
+  if (errs.length) {
+    return fail(errs.map(function (e) { return e.iface + "：" + e.msg; }).join("；"));
+  }
+
+  const api = adapterFor(state.settings.provider);
+  try {
+    const v = await api.writeFile(state.settings, path, text, "配置: 新增主机 " + name, null);
+    state.hosts.push({ name: name, path: path, text: text, baseText: text, version: v });
+    state.selected = path;
+    $("dlgHost").close();
+    toast("已创建 " + path, "ok");
+    renderHostList();
+    renderDetail();
+  } catch (e) {
+    fail("创建失败：" + e.message);
+  }
+});
+
+/* ---------------- 其它 ---------------- */
+
+$("btnSettings").addEventListener("click", function () {
+  const h = currentHost();
+  if (h && isDirty(h) && !confirm("有未提交的修改，去设置页会丢掉。确定？")) return;
+  showSetup();
+});
+
+$("btnReload").addEventListener("click", function () {
+  const h = currentHost();
+  if (h && isDirty(h) && !confirm("有未提交的修改，刷新会丢掉。确定？")) return;
+  loadRepo();
+});
+
+document.querySelectorAll("[data-close]").forEach(function (el) {
+  el.addEventListener("click", function () { el.closest("dialog").close(); });
+});
+
+/* ---------------- 启动 ---------------- */
+
+(function boot() {
+  const s = loadSettings();
+  if (s && s.baseUrl && s.repo && s.token) {
+    state.settings = s;
+    updateRepoPill();
+    loadRepo();
+  } else {
+    showSetup();
+  }
+})();
+</script>
+</body>
+</html>
