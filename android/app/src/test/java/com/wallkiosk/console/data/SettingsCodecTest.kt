@@ -112,7 +112,8 @@ class SettingsCodecTest {
                 repo = RepoConfig(provider = provider, repo = "o/r", token = "t"),
             )
             val decoded = SettingsCodec.decode(SettingsCodec.encode(s))
-            assertEquals(provider, decoded.settings.repo?.provider, "平台 $provider 往返失败")
+            // JUnit 的三参数形式是 (message, expected, actual)，顺序不能反
+            assertEquals("平台 $provider 往返失败", provider, decoded.settings.repo?.provider)
         }
     }
 
