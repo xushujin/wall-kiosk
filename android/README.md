@@ -237,17 +237,17 @@ android/
 
 **本地没有编译过**：开发环境没有 Android SDK、Gradle、kotlinc，`./gradlew` 跑不动。
 
-**但发布流水线已经编译并跑通过了**。v1.0.0 / v1.0.1 / v1.1.0 / v1.1.3 的 `testDebugUnitTest` 与 `assembleRelease` 都成功，说明：
+**但发布流水线已经编译并跑通过了**。v1.0.0 起每个 tag 的 `testDebugUnitTest` 与 `assembleRelease` 都成功，说明：
 
 | 项 | 状态 | 依据 |
 |---|---|---|
 | Kotlin 零警告编译 | ✅ | `allWarningsAsErrors` 已开，构建通过 |
 | 11 个测试类全部通过 | ✅ | 构建前跑的就是 `testDebugUnitTest` |
 | release 签名 | ✅ | 发布包证书指纹与本地 keystore 一致 |
-| APK 可产出 | ✅ | v1.1.3 附件 957 KB，SHA-256 `efa973ad…ca5252` |
+| APK 可产出 | ✅ | 每版约 957 KB（R8 之后），大小随代码略有浮动 |
 | R8 后包内容完整 | ✅ | 解包核对过包名、入口 Activity、应用名、主题、图标都在 |
 | 新增权限与 FileProvider | ✅ | v1.1.0 起包里能看到 `REQUEST_INSTALL_PACKAGES` 和 `fileprovider` |
-| Release 正文来自 tag 说明 | ✅ | v1.1.3 的 Release 页显示的就是 `git tag -m` 写的内容 |
+| Release 正文来自 tag 说明 | ✅ | v1.1.3 起 Release 页显示的就是 `git tag -m` 写的内容 |
 
 **R8 之后的运行时行为没在真机验证过。** 如果装上后启动崩溃，先看 `adb logcat`，
 最可能是某个类被裁掉，加一条 `-keep` 规则即可。
