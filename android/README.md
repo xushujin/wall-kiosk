@@ -179,6 +179,29 @@ Resource not accessible by integration
 仓库根目录的 `node test/console.mjs` 会拿同一批配置去跑真实的 `wall.sh --check` 做交叉验证。
 改规则时三处一起改。
 
+## 应用图标
+
+柔光拟态（soft neumorphism），三层全矢量，没有一张 PNG。
+
+| 层 | 内容 |
+|---|---|
+| `background` | 暖灰底，径向渐变：中心略亮、边缘略暗 |
+| `foreground` | 中间那块横躺的软材料，外阴影用 5 层半透明圆角矩形叠出来 |
+| `monochrome` | 只有轮廓的实心块，给 Android 13 主题图标用 |
+
+几个设计上的硬约束（改的时候别破坏）：
+
+- **单一光源在左上**。高光和暗部的渐变中心都偏左上/右下，方向必须一致，否则体积感会散。
+- **不用 `Paint.setShadowLayer`、不用 blur filter** —— vector 里没有模糊，外阴影是逐层放大 + alpha 递减近似出来的，
+  和 `Modifier.neu()` 的做法一致。
+- **主体必须落在中心 72×72 区域内**，否则会被启动器的圆形 mask 切掉两端。
+- **没有描边、没有分割线**，体积全靠明暗。
+- `monochrome` 只能有一块形状，多块在主题图标下会糊成一团。
+
+预览和验证的办法：`tools/gen-icon.mjs` 生成 XML 后，把它反解回 SVG 用 Chrome 渲染，
+多尺寸（108/72/48/32/24）+ 圆/方两种 mask + 深/浅壁纸各看一遍。
+**"预览好看"不等于"XML 里的坐标对"**，必须反解回来看。
+
 ## 结构
 
 ```
@@ -210,9 +233,17 @@ android/
 │       ├── AboutScreen.kt       关于 + 检查更新入口
 │       ├── UpdateDialog.kt      更新对话框与进度显示
 │       └── Dialogs.kt           屏幕编辑/新建主机
-├── app/src/main/res/xml/file_paths.xml   FileProvider 白名单（只有 cache/updates）
+├── app/src/main/res/
+│   ├── drawable/ic_launcher_background.xml    图标底层：暖灰渐变
+│   ├── drawable/ic_launcher_foreground.xml    图标主体：那块软材料
+│   ├── drawable/ic_launcher_monochrome.xml    Android 13 主题图标轮廓
+│   ├── mipmap-anydpi-v26/ic_launcher.xml      adaptive-icon 三层组装
+│   └── xml/file_paths.xml                     FileProvider 白名单（只有 cache/updates）
 └── gradle/wrapper/              wrapper（jar + properties）
 ```
+
+图标不是手写的，是 `tools/gen-icon.mjs` 生成的（仓库根目录）。改设计改脚本里的参数再重跑，
+不要手改那三个 drawable —— 三层的坐标和颜色要互相对齐，手改很容易错位。
 
 ## 规范对照
 

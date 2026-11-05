@@ -123,6 +123,7 @@ wall-kiosk/
 ├── web/index.html                 配置台（单文件网页）
 ├── android/                       配置台（Kotlin + Compose）
 ├── .github/workflows/             只有 release.yml，推 tag 才触发
+├── tools/gen-icon.mjs             生成 App 图标（改设计改这个再重跑）
 ├── test/                          配置解析与仓库读写的测试
 ├── .gitignore                     运行时状态 / 真实配置 / 凭据不进版本库
 └── docs/                          文档

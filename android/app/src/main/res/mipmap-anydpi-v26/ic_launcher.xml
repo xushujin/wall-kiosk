@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  三层都用 vector，没有 PNG：
+    background  一块暖灰的底，中心偏亮、边缘略暗
+    foreground  那块横躺的软材料，带柔和外阴影
+    monochrome  Android 13 主题图标用的单色轮廓
+
+  颜色和坐标都在 drawable 里，改设计请改 tools/gen-icon.mjs 后重跑，
+  不要手改这三个文件——手改容易让三层对不齐。
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background" />
+    <background android:drawable="@drawable/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>
