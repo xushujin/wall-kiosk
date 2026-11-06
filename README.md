@@ -124,6 +124,7 @@ wall-kiosk/
 ├── android/                       配置台（Kotlin + Compose）
 ├── .github/workflows/             只有 release.yml，推 tag 才触发
 ├── tools/gen-icon.mjs             生成 App 图标（改设计改这个再重跑）
+├── tools/preview-icon.mjs         把图标 XML 反解成 HTML 供浏览器复验
 ├── test/                          配置解析与仓库读写的测试
 ├── .gitignore                     运行时状态 / 真实配置 / 凭据不进版本库
 └── docs/                          文档
@@ -132,8 +133,8 @@ wall-kiosk/
 ## 测试
 
 ```bash
-node test/console.mjs   # 解析 / 行级编辑 / 校验，并与 wall.sh --check 交叉验证
-node test/api.mjs       # 仓库读写适配层（假 GitHub / GitLab API）
+node test/console.mjs   # 解析 / 行级编辑 / 校验，并与 wall.sh --check 交叉验证（42 项）
+node test/api.mjs       # 仓库读写适配层，假 GitHub / Gitee / GitLab 服务（36 项）
 ```
 
 `console.mjs` 会把同一批配置同时喂给网页版的校验器和真实的 `bin/wall.sh --check`，
@@ -153,7 +154,7 @@ node test/api.mjs       # 仓库读写适配层（假 GitHub / GitLab API）
 
 ## 已验证 / 未验证
 
-在 macOS 上用 mock 的 `xrandr` / `chromium` / `git` 跑通了完整链路：
+在 macOS 上用 mock 的 `xrandr` / `chromium` / `git` / `curl` 跑通了完整链路：
 
 - 1 块 / 2 块 / 3 块屏启动，负坐标解析、混合分辨率、带空格的配置
 - 配置行数多于实际屏数（写 3 块只接 2 块）→ 10 秒后按实际数量启动，不再白等 30 秒

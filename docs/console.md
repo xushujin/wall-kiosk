@@ -87,7 +87,8 @@ cd android
 
 **装过一次之后就能在 App 内升级**：关于页 → 应用更新 → 检查更新。它查的是本仓库的 Release，
 下载有进度条，装之前会核对包名和签名。更新源默认是 `xushujin/wall-kiosk`，
-国内网络慢的话在「设置 → 应用更新」里换成 Gitee 镜像或自建地址即可。
+填 `owner/repo` 时会**依次试 GitHub 和 Gitee**（国内直连 GitHub 慢就自动落到 Gitee）；
+也可以改成一个完整的 `releases/latest` 地址指向自建发布服务。
 
 **token 存在 App 私有目录的 `settings.conf` 里，是明文。** 和网页版存 localStorage 一个性质。建议日常用只读令牌，需要改的时候再换带写权限的。
 
@@ -129,11 +130,13 @@ HDMI-1|https://b/y|1.0|120
 
 最后一条比 `wall.sh` 的 `validate_conf` 更严格（它不管空文件），但 `reload_body` 会因为「解析结果为空」拒绝应用，所以效果一样，只是提前拦。
 
-这套规则有三份实现：`bin/wall.sh`、`web/index.html`、`android/.../ScreensConf.kt`。**改任何一处都要同步另外两处**，`test/console.mjs` 会拿同一批配置去跑真实的 `wall.sh --check` 做交叉验证，分叉了会直接报错。
+这套规则有三份实现：`bin/wall.sh` 的 `validate_conf`、`web/index.html` 的 `==PURE-BEGIN==` 段、
+`android/app/src/main/java/com/wallkiosk/console/data/ScreensConf.kt`。
+**改任何一处都要同步另外两处**，`test/console.mjs` 会拿同一批配置去跑真实的 `wall.sh --check` 做交叉验证，分叉了会直接报错。
 
 ```bash
-node test/console.mjs   # 解析/编辑/校验 + 与 wall.sh 交叉验证
-node test/api.mjs       # 仓库读写适配层（假 GitHub / GitLab API）
+node test/console.mjs   # 解析/编辑/校验 + 与 wall.sh 交叉验证（42 项）
+node test/api.mjs       # 假 GitHub / Gitee / GitLab 服务的读写适配层（36 项）
 ```
 
 ## 7. 并发冲突
@@ -141,6 +144,8 @@ node test/api.mjs       # 仓库读写适配层（假 GitHub / GitLab API）
 网页版和 App 写文件时都会带上**读到的版本号**：
 
 - GitHub：`sha` 乐观锁。别人在你编辑期间推了新提交，你的 PUT 会被拒（409），界面提示「提交失败」，刷新后重来
+- **Gitee**：和 GitHub 一样用 `sha`，但新建走 `POST`、更新走 `PUT`。sha 过期会被拒，界面同样提示「提交失败」。
+  写完后如果响应里没带新 sha，适配层会再回读一次，避免下次提交被当成「新建」而失败
 - GitLab：Files API 没有 sha 校验，后写的直接覆盖先写的。多人同时改同一个文件时要小心
 
 大屏侧不会产生本地提交（它只 `pull --ff-only` 或 `reset --hard`），所以不用担心主机和人对冲。

@@ -92,7 +92,8 @@ git tag v1.2.3
 git push origin v1.2.3
 ```
 
-`release.yml` 会：校验签名材料 → 还原 keystore → 跑单测 → 构建 → `apksigner verify` 确认不是 debug 证书 → 建 Release 并挂上 `wall-kiosk-console-1.2.3.apk`。
+`release.yml` 会：校验签名材料 → 还原 keystore → 跑单测 → 构建 → `apksigner verify`
+确认不是 debug 证书 → 读 tag 说明 → 建 Release 并挂上 `wall-kiosk-console-1.2.3.apk`。
 
 测试放在发版流程里，是因为它是唯一的门：PR 阶段没有自动检查，打 tag 前的单测就是最后一道防线。
 
@@ -140,7 +141,9 @@ Resource not accessible by integration
 - **更新源可以改**：设置页 → 应用更新。填 `owner/repo` 会依次试 GitHub 和 Gitee；
   填完整地址（`https://…/releases/latest`）用于自建发布服务。存在 `AppSettings.updateRepo`。
 - **只认正式版**：`prerelease` 或 `draft` 的 Release 会被跳过，不会自动更新到预发布版。
-- **Release 的说明就是更新说明**，`release.yml` 用 `generate_release_notes: true` 生成。
+- **Release 的说明就是更新说明**：Release 正文取自 `git tag -a ... -m` 写的 tag 说明，
+  App 更新对话框显示的就是它；`generate_release_notes: true` 只负责在末尾追加一行自动 changelog。
+  （不开 PR 的仓库，自动生成的 notes 就只有那一行，所以改成用 tag 说明。）
 - **GitHub 接口未登录时每小时 60 次**，按出口 IP 算。被限流会明确报 403，过一会儿再试。
 - **没有后台自动检查**：只有点「检查更新」才发请求。
 - **装完进程会被系统杀掉**，重新打开就是新版本。
@@ -181,7 +184,10 @@ Resource not accessible by integration
 
 ## 应用图标
 
-柔光拟态（soft neumorphism），三层全矢量，没有一张 PNG。
+柔光拟态（soft neumorphism），三层全矢量，**APK 里没有一张图标 PNG**。
+
+预览图见 [docs/icon-preview.png](../docs/icon-preview.png)（176/120/96/72/48/32 多尺寸，圆/方两种 mask）。
+那是渲染出来的对照图，不是打包进 App 的资源。
 
 | 层 | 内容 |
 |---|---|
@@ -198,9 +204,19 @@ Resource not accessible by integration
 - **没有描边、没有分割线**，体积全靠明暗。
 - `monochrome` 只能有一块形状，多块在主题图标下会糊成一团。
 
-预览和验证的办法：`tools/gen-icon.mjs` 生成 XML 后，把它反解回 SVG 用 Chrome 渲染，
-多尺寸（108/72/48/32/24）+ 圆/方两种 mask + 深/浅壁纸各看一遍。
-**"预览好看"不等于"XML 里的坐标对"**，必须反解回来看。
+改设计后的完整流程：
+
+```bash
+node tools/gen-icon.mjs android/app/src/main/res/drawable   # 生成三层 XML
+node tools/preview-icon.mjs                                 # 反解成 HTML
+open -a "Google Chrome" /tmp/wall-kiosk-icon-preview.html   # macOS；其它系统直接打开该文件
+```
+
+`preview-icon.mjs` 把 XML 反解回 SVG，一次渲染 108/72/48/32/24 五个尺寸、
+圆/方两种 mask、深/浅壁纸和 monochrome 轮廓。
+**"预览稿好看"不等于"XML 里的坐标对"** —— 这一步抓到过渐变没套上（渲染成黑块）
+和两层 `clipPath` 的 id 冲突（背景层整个消失）。
+[docs/icon-preview.png](../docs/icon-preview.png) 就是用它截的对照图。
 
 ## 结构
 
@@ -242,7 +258,7 @@ android/
 └── gradle/wrapper/              wrapper（jar + properties）
 ```
 
-图标不是手写的，是 `tools/gen-icon.mjs` 生成的（仓库根目录）。改设计改脚本里的参数再重跑，
+图标不是手写的，是 `tools/gen-icon.mjs` 生成的（仓库根目录，改完按上面三条命令复验）。
 不要手改那三个 drawable —— 三层的坐标和颜色要互相对齐，手改很容易错位。
 
 ## 规范对照
@@ -277,19 +293,26 @@ android/
 | release 签名 | ✅ | 发布包证书指纹与本地 keystore 一致 |
 | APK 可产出 | ✅ | 每版约 957 KB（R8 之后），大小随代码略有浮动 |
 | R8 后包内容完整 | ✅ | 解包核对过包名、入口 Activity、应用名、主题、图标都在 |
+| 新图标资源进包 | ✅ | v1.2.0 的 `resources.arsc` 里能看到三个 `ic_launcher_*` 资源名 |
 | 新增权限与 FileProvider | ✅ | v1.1.0 起包里能看到 `REQUEST_INSTALL_PACKAGES` 和 `fileprovider` |
 | Release 正文来自 tag 说明 | ✅ | v1.1.3 起 Release 页显示的就是 `git tag -m` 写的内容 |
 
-**R8 之后的运行时行为没在真机验证过。** 如果装上后启动崩溃，先看 `adb logcat`，
-最可能是某个类被裁掉，加一条 `-keep` 规则即可。
+**真机状态**：用户已经在手机上运行过 v1.1.x —— 能启动、能进设置页、能发起仓库连接
+（键盘遮挡和 Gitee 报错就是从真机截图反馈的）。
+所以 **R8 没有把启动路径裁坏**，"装上就崩"这个风险已经排除。这两处 bug 都已修：
 
-**仍然没验证的（只有真机能看）：**
+- 键盘遮挡：`imePadding()` 从滚动内容里移到滚动容器外（v1.1.1）
+- Gitee 报 JSON 异常：Gitee 对不存在的文件返回 `200 + []` 而非 404，改成解析不出对象就当"文件不存在"（v1.1.1）
 
-1. 拟态阴影的实际观感——用多层偏移近似高斯模糊。边缘若出现明显台阶，调 `NeuDims.shadowSteps`
+**修复之后没有复验的（需要装新版确认）：**
+
+1. 输入框在键盘弹出时是否完整可见（改动在 `SettingsScreen.kt`）
+2. Gitee 连接现在给出的是"没找到配置文件"这类正常提示，而不是 JSON 异常
+3. 拟态阴影的实际观感——用多层偏移近似高斯模糊。边缘若出现明显台阶，调 `NeuDims.shadowSteps`
    （调大更细腻，绘制次数线性增加）
-2. 四套配色在深色/浅色系统栏下的对比度
-3. `Dialog` 里键盘弹出时内容是否被遮（用了 `imePadding`）
-4. 真机上的滑动/点击手感
+4. 四套配色在深色/浅色系统栏下的对比度
+5. 真机上的滑动/点击手感
+6. 新版柔光拟态图标在启动器里的实际观感（只在浏览器里反解渲染看过）
 
 **应用内更新这块，明确没验证的：**
 
@@ -301,5 +324,5 @@ android/
 | `FileProvider` 拉起系统安装器 | ❌ 未在真机跑过 | 依赖 manifest 里的 provider 配置，装不上会提示"没有找到能处理 APK 的应用" |
 | "安装未知应用"权限引导 | ❌ 未在真机跑过 | 跳的是 `ACTION_MANAGE_UNKNOWN_APP_SOURCES`，各厂商 ROM 可能改过这个页面 |
 
-这几项第一次真机验证时的顺序建议：先确认 `检查更新` 能拉到 v1.0.1（当前版本等于它，应显示"已是最新"），
-再打一个更高版本的 tag，走完整的下载 → 校验 → 安装。
+要验证完整链路：**先装一个旧版本**（比如 v1.1.4），再在「关于 → 检查更新」里升到 v1.2.0。
+直接装最新版是测不到更新的——必须有一个比已装版本更高的 Release。
